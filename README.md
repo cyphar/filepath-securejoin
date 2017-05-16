@@ -1,5 +1,7 @@
 ## `filepath-securejoin` ##
 
+[![Build Status](https://travis-ci.org/cyphar/filepath-securejoin.svg?branch=master)](https://travis-ci.org/cyphar/filepath-securejoin)
+
 An implementation of `SecureJoin`, a [candidate for inclusion in the Go
 standard library][go#20126]. The purpose of this function is to be a "secure"
 alternative to `filepath.Join`, and in particular it provides certain

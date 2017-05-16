@@ -1,0 +1,169 @@
+// Copyright (C) 2017 SUSE LLC. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+package securejoin
+
+import (
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// TODO: These tests won't work on plan9 because it doesn't have symlinks, and
+//       also we use '/' here explicitly which probably won't work on Windows.
+
+func symlink(t *testing.T, oldname, newname string) {
+	if err := os.Symlink(oldname, newname); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Test basic handling of symlink expansion.
+func TestSymlink(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestSymlink")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	symlink(t, "somepath", filepath.Join(dir, "etc"))
+	symlink(t, "../../../../../etc", filepath.Join(dir, "etclink"))
+	symlink(t, "/../../../../../etc/passwd", filepath.Join(dir, "passwd"))
+
+	for _, test := range []struct {
+		root, unsafe string
+		expected     string
+	}{
+		// Make sure that expansion with a root of '/' proceeds in the expected fashion.
+		{"/", filepath.Join(dir, "passwd"), "/etc/passwd"},
+		{"/", filepath.Join(dir, "etclink"), "/etc"},
+		{"/", filepath.Join(dir, "etc"), filepath.Join(dir, "somepath")},
+		// Now test scoped expansion.
+		{dir, "passwd", filepath.Join(dir, "somepath", "passwd")},
+		{dir, "etclink", filepath.Join(dir, "somepath")},
+		{dir, "etc", filepath.Join(dir, "somepath")},
+		{dir, "etc/test", filepath.Join(dir, "somepath", "test")},
+		{dir, "etc/test/..", filepath.Join(dir, "somepath")},
+	} {
+		got, err := SecureJoin(test.root, test.unsafe)
+		if err != nil {
+			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
+			continue
+		}
+		if got != test.expected {
+			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
+			continue
+		}
+	}
+}
+
+// In a path without symlinks, SecureJoin is equivalent to Clean+Join.
+func TestNoSymlink(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestNoSymlink")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	for _, test := range []struct {
+		root, unsafe string
+	}{
+		// TODO: Do we need to have some conditional FromSlash handling here?
+		{dir, "somepath"},
+		{dir, "even/more/path"},
+		{dir, "/this/is/a/path"},
+		{dir, "also/a/../path/././/with/some/./.././junk"},
+		{dir, "yetanother/../path/././/with/some/./.././junk../../../../../../../../../../../../etc/passwd"},
+		{dir, "/../../../../etc/passwd"},
+		{dir, "../../../../somedir"},
+		{dir, "../../../../"},
+		{dir, "./../../.././././../../../etc passwd"},
+	} {
+		expected := filepath.Join(test.root, filepath.Clean(string(filepath.Separator)+test.unsafe))
+		got, err := SecureJoin(test.root, test.unsafe)
+		if err != nil {
+			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
+			continue
+		}
+		if got != expected {
+			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, expected, got)
+			continue
+		}
+	}
+}
+
+// Make sure that .. is **not** expanded lexically.
+func TestNonLexical(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestNonLexical")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	os.MkdirAll(filepath.Join(dir, "cousinparent", "cousin"), 0755)
+	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
+	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
+	symlink(t, "/../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
+
+	for _, test := range []struct {
+		root, unsafe string
+		expected     string
+	}{
+		{dir, "subdir", filepath.Join(dir, "subdir")},
+		{dir, "subdir/link/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, "subdir/link2/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, "subdir/link3/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, "subdir/../test", filepath.Join(dir, "test")},
+		// This is the divergence from a simple filepath.Clean implementation.
+		{dir, "subdir/link/../test", filepath.Join(dir, "cousinparent", "test")},
+		{dir, "subdir/link2/../test", filepath.Join(dir, "cousinparent", "test")},
+		{dir, "subdir/link3/../test", filepath.Join(dir, "cousinparent", "test")},
+	} {
+		got, err := SecureJoin(test.root, test.unsafe)
+		if err != nil {
+			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
+			continue
+		}
+		if got != test.expected {
+			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
+			continue
+		}
+	}
+}
+
+// Make sure that symlink loops result in errors.
+func TestSymlinkLoop(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestSymlinkLoop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	symlink(t, "../../../../../../../../../../../../path", filepath.Join(dir, "subdir", "link"))
+	symlink(t, "/subdir/link", filepath.Join(dir, "path"))
+	symlink(t, "/../../../../self", filepath.Join(dir, "self"))
+
+	for _, test := range []struct {
+		root, unsafe string
+	}{
+		{dir, "subdir/link"},
+		{dir, "path"},
+		{dir, "../../path"},
+		{dir, "subdir/link/../.."},
+		{dir, "../../../subdir/link/../.."},
+		{dir, "self"},
+		{dir, "self/.."},
+		{dir, "/../../../self/.."},
+		{dir, "/self/././.."},
+	} {
+		got, err := SecureJoin(test.root, test.unsafe)
+		if err == nil {
+			t.Errorf("securejoin(%q, %q): expected error, got %q", test.root, test.unsafe, got)
+			continue
+		}
+	}
+}

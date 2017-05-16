@@ -26,11 +26,15 @@ func TestSymlink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer os.RemoveAll(dir)
 
 	symlink(t, "somepath", filepath.Join(dir, "etc"))
-	symlink(t, "../../../../../etc", filepath.Join(dir, "etclink"))
-	symlink(t, "/../../../../../etc/passwd", filepath.Join(dir, "passwd"))
+	symlink(t, "../../../../../../../../../../../../../etc", filepath.Join(dir, "etclink"))
+	symlink(t, "/../../../../../../../../../../../../../etc/passwd", filepath.Join(dir, "passwd"))
 
 	for _, test := range []struct {
 		root, unsafe string
@@ -52,6 +56,14 @@ func TestSymlink(t *testing.T) {
 			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
 			continue
 		}
+		// This is only for OS X, where /etc is a symlink to /private/etc. In
+		// principle, SecureJoin(/, pth) is the same as EvalSymlinks(pth) in
+		// the case where the path exists.
+		if test.root == "/" {
+			if expected, err := filepath.EvalSymlinks(test.expected); err == nil {
+				test.expected = expected
+			}
+		}
 		if got != test.expected {
 			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
 			continue
@@ -62,6 +74,10 @@ func TestSymlink(t *testing.T) {
 // In a path without symlinks, SecureJoin is equivalent to Clean+Join.
 func TestNoSymlink(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoSymlink")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err = filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,10 +92,10 @@ func TestNoSymlink(t *testing.T) {
 		{dir, "/this/is/a/path"},
 		{dir, "also/a/../path/././/with/some/./.././junk"},
 		{dir, "yetanother/../path/././/with/some/./.././junk../../../../../../../../../../../../etc/passwd"},
-		{dir, "/../../../../etc/passwd"},
-		{dir, "../../../../somedir"},
-		{dir, "../../../../"},
-		{dir, "./../../.././././../../../etc passwd"},
+		{dir, "/../../../../../../../../../../../../../../../../etc/passwd"},
+		{dir, "../../../../../../../../../../../../../../../../somedir"},
+		{dir, "../../../../../../../../../../../../../../../../"},
+		{dir, "./../../.././././../../../../../../../../../../../../../../../../etc passwd"},
 	} {
 		expected := filepath.Join(test.root, filepath.Clean(string(filepath.Separator)+test.unsafe))
 		got, err := SecureJoin(test.root, test.unsafe)
@@ -100,13 +116,17 @@ func TestNonLexical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer os.RemoveAll(dir)
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 	os.MkdirAll(filepath.Join(dir, "cousinparent", "cousin"), 0755)
 	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
 	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
-	symlink(t, "/../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
+	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
 
 	for _, test := range []struct {
 		root, unsafe string
@@ -140,12 +160,16 @@ func TestSymlinkLoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer os.RemoveAll(dir)
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
-	symlink(t, "../../../../../../../../../../../../path", filepath.Join(dir, "subdir", "link"))
+	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "subdir", "link"))
 	symlink(t, "/subdir/link", filepath.Join(dir, "path"))
-	symlink(t, "/../../../../self", filepath.Join(dir, "self"))
+	symlink(t, "/../../../../../../../../../../../../../../../../self", filepath.Join(dir, "self"))
 
 	for _, test := range []struct {
 		root, unsafe string
@@ -154,10 +178,10 @@ func TestSymlinkLoop(t *testing.T) {
 		{dir, "path"},
 		{dir, "../../path"},
 		{dir, "subdir/link/../.."},
-		{dir, "../../../subdir/link/../.."},
+		{dir, "../../../../../../../../../../../../../../../../subdir/link/../../../../../../../../../../../../../../../.."},
 		{dir, "self"},
 		{dir, "self/.."},
-		{dir, "/../../../self/.."},
+		{dir, "/../../../../../../../../../../../../../../../../self/.."},
 		{dir, "/self/././.."},
 	} {
 		got, err := SecureJoin(test.root, test.unsafe)

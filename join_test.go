@@ -5,6 +5,7 @@
 package securejoin
 
 import (
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -185,9 +186,144 @@ func TestSymlinkLoop(t *testing.T) {
 		{dir, "/self/././.."},
 	} {
 		got, err := SecureJoin(test.root, test.unsafe)
-		if err == nil {
-			t.Errorf("securejoin(%q, %q): expected error, got %q", test.root, test.unsafe, got)
+		if err != ErrSymlinkLoop {
+			t.Errorf("securejoin(%q, %q): expected ELOOP, got %v & %q", test.root, test.unsafe, err, got)
 			continue
+		}
+	}
+}
+
+type mockVFS struct {
+	lstat    func(path string) (os.FileInfo, error)
+	readlink func(path string) (string, error)
+}
+
+func (m mockVFS) Lstat(path string) (os.FileInfo, error) { return m.lstat(path) }
+func (m mockVFS) Readlink(path string) (string, error)   { return m.readlink(path) }
+
+// Make sure that SecureJoinVFS actually does use the given VFS interface.
+func TestSecureJoinVFS(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestNonLexical")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	os.MkdirAll(filepath.Join(dir, "cousinparent", "cousin"), 0755)
+	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
+	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
+	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
+
+	for _, test := range []struct {
+		root, unsafe string
+		expected     string
+	}{
+		{dir, "subdir", filepath.Join(dir, "subdir")},
+		{dir, "subdir/link/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, "subdir/link2/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, "subdir/link3/test", filepath.Join(dir, "cousinparent", "cousin", "test")},
+		{dir, "subdir/../test", filepath.Join(dir, "test")},
+		// This is the divergence from a simple filepath.Clean implementation.
+		{dir, "subdir/link/../test", filepath.Join(dir, "cousinparent", "test")},
+		{dir, "subdir/link2/../test", filepath.Join(dir, "cousinparent", "test")},
+		{dir, "subdir/link3/../test", filepath.Join(dir, "cousinparent", "test")},
+	} {
+		var nLstat, nReadlink int
+		mock := mockVFS{
+			lstat:    func(path string) (os.FileInfo, error) { nLstat++; return os.Lstat(path) },
+			readlink: func(path string) (string, error) { nReadlink++; return os.Readlink(path) },
+		}
+
+		got, err := SecureJoinVFS(test.root, test.unsafe, mock)
+		if err != nil {
+			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
+			continue
+		}
+		if got != test.expected {
+			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
+			continue
+		}
+		if nLstat == 0 && nReadlink == 0 {
+			t.Errorf("securejoin(%q, %q): expected to use either lstat or readlink, neither were used", test.root, test.unsafe)
+		}
+	}
+}
+
+// Make sure that SecureJoinVFS actually does use the given VFS interface, and
+// that errors are correctly propagated.
+func TestSecureJoinVFSErrors(t *testing.T) {
+	var (
+		lstatErr    = errors.New("lstat error")
+		readlinkErr = errors.New("readlink err")
+	)
+
+	// Set up directory.
+	dir, err := ioutil.TempDir("", "TestSecureJoinVFSErrors")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	// Make a link.
+	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "link"))
+
+	// Define some fake mock functions.
+	lstatFailFn := func(path string) (os.FileInfo, error) { return nil, lstatErr }
+	readlinkFailFn := func(path string) (string, error) { return "", readlinkErr }
+
+	// Make sure that the set of {lstat, readlink} failures do propagate.
+	for idx, test := range []struct {
+		vfs      VFS
+		expected []error
+	}{
+		{
+			expected: []error{nil},
+			vfs: mockVFS{
+				lstat:    os.Lstat,
+				readlink: os.Readlink,
+			},
+		},
+		{
+			expected: []error{lstatErr},
+			vfs: mockVFS{
+				lstat:    lstatFailFn,
+				readlink: os.Readlink,
+			},
+		},
+		{
+			expected: []error{readlinkErr},
+			vfs: mockVFS{
+				lstat:    os.Lstat,
+				readlink: readlinkFailFn,
+			},
+		},
+		{
+			expected: []error{lstatErr, readlinkErr},
+			vfs: mockVFS{
+				lstat:    lstatFailFn,
+				readlink: readlinkFailFn,
+			},
+		},
+	} {
+		_, err := SecureJoinVFS(dir, "link", test.vfs)
+
+		success := false
+		for _, exp := range test.expected {
+			if err == exp {
+				success = true
+			}
+		}
+		if !success {
+			t.Errorf("SecureJoinVFS.mock%d: expected to get lstatError, got %v", idx, err)
 		}
 	}
 }

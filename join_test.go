@@ -185,8 +185,8 @@ func TestSymlinkLoop(t *testing.T) {
 		{dir, "/self/././.."},
 	} {
 		got, err := SecureJoin(test.root, test.unsafe)
-		if err == nil {
-			t.Errorf("securejoin(%q, %q): expected error, got %q", test.root, test.unsafe, got)
+		if err != ErrSymlinkLoop {
+			t.Errorf("securejoin(%q, %q): expected ELOOP, got %v & %q", test.root, test.unsafe, err, got)
 			continue
 		}
 	}

@@ -18,6 +18,10 @@ import (
 	"strings"
 )
 
+// ErrSymlinkLoop is returned by SecureJoinVFS when too many symlinks have been
+// evaluated in attempting to securely join the two given paths.
+var ErrSymlinkLoop = errors.New("SecureJoin: too many links")
+
 // SecureJoin joins the two given path components (similar to Join) except that
 // the returned path is guaranteed to be scoped inside the provided root path
 // (when evaluated). Any symbolic links in the path are evaluated with the
@@ -32,7 +36,7 @@ func SecureJoin(root, unsafePath string) (string, error) {
 	n := 0
 	for unsafePath != "" {
 		if n > 255 {
-			return "", errors.New("SecureJoin: too many links")
+			return "", ErrSymlinkLoop
 		}
 
 		// Next path component, p.

@@ -191,3 +191,5 @@ func TestSymlinkLoop(t *testing.T) {
 		}
 	}
 }
+
+// Make sure that SecureJoinVFS actually does use the given VFS.

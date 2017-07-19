@@ -22,16 +22,23 @@ import (
 // evaluated in attempting to securely join the two given paths.
 var ErrSymlinkLoop = errors.New("SecureJoin: too many links")
 
-// SecureJoin joins the two given path components (similar to Join) except that
-// the returned path is guaranteed to be scoped inside the provided root path
-// (when evaluated). Any symbolic links in the path are evaluated with the
-// given root treated as the root of the filesystem, similar to a chroot.
+// SecureJoinVFS joins the two given path components (similar to Join) except
+// that the returned path is guaranteed to be scoped inside the provided root
+// path (when evaluated). Any symbolic links in the path are evaluated with the
+// given root treated as the root of the filesystem, similar to a chroot. The
+// filesystem state is evaluated through the given VFS interface (if nil, the
+// standard os.* family of functions are used).
 //
 // Note that the guarantees provided by this function only apply if the path
 // components in the returned string are not modified (in other words are not
 // replaced with symlinks on the filesystem) after this function has returned.
 // Such a symlink race is necessarily out-of-scope of SecureJoin.
-func SecureJoin(root, unsafePath string) (string, error) {
+func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
+	// Use the os.* VFS implementation if none was specified.
+	if vfs == nil {
+		vfs = osVFS{}
+	}
+
 	var path bytes.Buffer
 	n := 0
 	for unsafePath != "" {
@@ -60,7 +67,7 @@ func SecureJoin(root, unsafePath string) (string, error) {
 		fullP := filepath.Clean(root + cleanP)
 
 		// Figure out whether the path is a symlink.
-		fi, err := os.Lstat(fullP)
+		fi, err := vfs.Lstat(fullP)
 		if err != nil && !os.IsNotExist(err) {
 			return "", err
 		}
@@ -76,7 +83,7 @@ func SecureJoin(root, unsafePath string) (string, error) {
 		n++
 
 		// It's a symlink, expand it by prepending it to the yet-unparsed path.
-		dest, err := os.Readlink(fullP)
+		dest, err := vfs.Readlink(fullP)
 		if err != nil {
 			return "", err
 		}
@@ -93,4 +100,10 @@ func SecureJoin(root, unsafePath string) (string, error) {
 	// clean.
 	fullP := filepath.Clean(string(filepath.Separator) + path.String())
 	return filepath.Clean(root + fullP), nil
+}
+
+// SecureJoin is a wrapper around SecureJoinVFS that just uses the os.* library
+// of functions as the VFS. If in doubt, use this function over SecureJoinVFS.
+func SecureJoin(root, unsafePath string) (string, error) {
+	return SecureJoinVFS(root, unsafePath, nil)
 }

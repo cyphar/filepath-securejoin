@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -189,6 +190,61 @@ func TestSymlinkLoop(t *testing.T) {
 		if err != ErrSymlinkLoop {
 			t.Errorf("securejoin(%q, %q): expected ELOOP, got %v & %q", test.root, test.unsafe, err, got)
 			continue
+		}
+	}
+}
+
+// Make sure that ENOTDIR is correctly handled.
+func TestEnotdir(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestEnotdir")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err = filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
+	ioutil.WriteFile(filepath.Join(dir, "notdir"), []byte("I am not a directory!"), 0755)
+	symlink(t, "/../../../notdir/somechild", filepath.Join(dir, "subdir", "link"))
+
+	for _, test := range []struct {
+		root, unsafe string
+	}{
+		{dir, "subdir/link"},
+		{dir, "notdir"},
+		{dir, "notdir/child"},
+	} {
+		_, err := SecureJoin(test.root, test.unsafe)
+		if err != nil {
+			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
+			continue
+		}
+	}
+}
+
+// Some silly tests to make sure that all error types are correctly handled.
+func TestIsNotExist(t *testing.T) {
+	for _, test := range []struct {
+		err      error
+		expected bool
+	}{
+		{&os.PathError{Op: "test1", Err: syscall.ENOENT}, true},
+		{&os.LinkError{Op: "test1", Err: syscall.ENOENT}, true},
+		{&os.SyscallError{Syscall: "test1", Err: syscall.ENOENT}, true},
+		{&os.PathError{Op: "test2", Err: syscall.ENOTDIR}, true},
+		{&os.LinkError{Op: "test2", Err: syscall.ENOTDIR}, true},
+		{&os.SyscallError{Syscall: "test2", Err: syscall.ENOTDIR}, true},
+		{&os.PathError{Op: "test3", Err: syscall.EACCES}, false},
+		{&os.LinkError{Op: "test3", Err: syscall.EACCES}, false},
+		{&os.SyscallError{Syscall: "test3", Err: syscall.EACCES}, false},
+		{errors.New("not a proper error"), false},
+	} {
+		got := IsNotExist(test.err)
+		if got != test.expected {
+			t.Errorf("IsNotExist(%#v): expected %v, got %v", test.err, test.expected, got)
 		}
 	}
 }

@@ -25,7 +25,7 @@ This library **guarantees** the following:
   these symlinks will **not** be expanded lexically (`filepath.Clean` is not
   called on the input before processing).
 
-* Non-existant path components are unaffected by `SecureJoin` (similar to
+* Non-existent path components are unaffected by `SecureJoin` (similar to
   `filepath.EvalSymlinks`'s semantics).
 
 * The returned path will always be `filepath.Clean`ed and thus not contain any

@@ -12,17 +12,17 @@ package securejoin
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
-
-	"github.com/pkg/errors"
 )
 
 // ErrSymlinkLoop is returned by SecureJoinVFS when too many symlinks have been
 // evaluated in attempting to securely join the two given paths.
-var ErrSymlinkLoop = errors.Wrap(syscall.ELOOP, "secure join")
+var ErrSymlinkLoop = fmt.Errorf("secure join: %w", syscall.ELOOP)
 
 // IsNotExist tells you if err is an error that implies that either the path
 // accessed does not exist (or path components don't exist). This is

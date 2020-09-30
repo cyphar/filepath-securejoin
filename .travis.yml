@@ -4,8 +4,8 @@
 
 language: go
 go:
-    - 1.7.x
-    - 1.8.x
+    - 1.12.x
+    - 1.15.x
     - tip
 arch:
     - AMD64

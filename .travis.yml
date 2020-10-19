@@ -7,7 +7,9 @@ go:
     - 1.7.x
     - 1.8.x
     - tip
-
+arch:
+    - AMD64
+    - ppc64le
 os:
     - linux
     - osx

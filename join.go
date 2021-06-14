@@ -13,7 +13,6 @@ package securejoin
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,7 +21,9 @@ import (
 
 // ErrSymlinkLoop is returned by SecureJoinVFS when too many symlinks have been
 // evaluated in attempting to securely join the two given paths.
-var ErrSymlinkLoop = fmt.Errorf("secure join: %w", syscall.ELOOP)
+//
+// Deprecated: use errors.Is(err, syscall.ELOOP) instead.
+var ErrSymlinkLoop = syscall.ELOOP
 
 // IsNotExist tells you if err is an error that implies that either the path
 // accessed does not exist (or path components don't exist). This is
@@ -58,7 +59,7 @@ func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
 	n := 0
 	for unsafePath != "" {
 		if n > 255 {
-			return "", ErrSymlinkLoop
+			return "", &os.PathError{Op: "SecureJoin", Path: root + "/" + unsafePath, Err: syscall.ELOOP}
 		}
 
 		// Next path component, p.

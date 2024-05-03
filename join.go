@@ -53,20 +53,21 @@ func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
 
 	unsafePath = filepath.FromSlash(unsafePath)
 	var (
-		currentPath string
-		linksWalked int
+		currentPath   string
+		remainingPath = unsafePath
+		linksWalked   int
 	)
-	for unsafePath != "" {
-		if v := filepath.VolumeName(unsafePath); v != "" {
-			unsafePath = unsafePath[len(v):]
+	for remainingPath != "" {
+		if v := filepath.VolumeName(remainingPath); v != "" {
+			remainingPath = remainingPath[len(v):]
 		}
 
 		// Get the next path component.
 		var part string
-		if i := strings.IndexRune(unsafePath, filepath.Separator); i == -1 {
-			part, unsafePath = unsafePath, ""
+		if i := strings.IndexRune(remainingPath, filepath.Separator); i == -1 {
+			part, remainingPath = remainingPath, ""
 		} else {
-			part, unsafePath = unsafePath[:i], unsafePath[i+1:]
+			part, remainingPath = remainingPath[:i], remainingPath[i+1:]
 		}
 
 		// Apply the component lexically to the path we are building.
@@ -103,7 +104,7 @@ func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		unsafePath = dest + string(filepath.Separator) + unsafePath
+		remainingPath = dest + string(filepath.Separator) + remainingPath
 		// Absolute symlinks reset any work we've already done.
 		if filepath.IsAbs(dest) {
 			currentPath = ""

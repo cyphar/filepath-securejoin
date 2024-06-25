@@ -20,7 +20,6 @@ jobs:
           - macos-latest
           - windows-latest
         go-version:
-          - "1.14"
           - "1.21"
           - "1.22"
           - "^1"

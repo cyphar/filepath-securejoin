@@ -28,6 +28,11 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 	// components using file descriptors. We then return the last component we
 	// managed open, along with the remaining path components not opened.
 
+	// Try to use openat2 if possible.
+	if hasOpenat2() {
+		return partialLookupOpenat2(root, unsafePath)
+	}
+
 	// Get the "actual" root path from /proc/self/fd. This is necessary if the
 	// root is some magic-link like /proc/$pid/root, in which case we want to
 	// make sure when we do checkProcSelfFdPath that we are using the correct

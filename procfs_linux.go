@@ -55,6 +55,124 @@ func verifyProcRoot(procRoot *os.File) error {
 }
 
 var (
+	hasNewMountApiBool bool
+	hasNewMountApiOnce sync.Once
+)
+
+func hasNewMountApi() bool {
+	hasNewMountApiOnce.Do(func() {
+		// All of the pieces of the new mount API we use (fsopen, fsconfig,
+		// fsmount, open_tree) were added together in Linux 5.1[1,2], so we can
+		// just check for one of the syscalls and the others should also be
+		// available.
+		//
+		// Just try to use open_tree(2) to open a file without OPEN_TREE_CLONE.
+		// This is equivalent to openat(2), but tells us if open_tree is
+		// available (and thus all of the other basic new mount API syscalls).
+		// open_tree(2) is most light-weight syscall to test here.
+		//
+		// [1]: merge commit 400913252d09
+		// [2]: <https://lore.kernel.org/lkml/153754740781.17872.7869536526927736855.stgit@warthog.procyon.org.uk/>
+		fd, err := unix.OpenTree(-int(unix.EBADF), "/", unix.OPEN_TREE_CLOEXEC)
+		if err == nil {
+			hasNewMountApiBool = true
+			_ = unix.Close(fd)
+		}
+	})
+	return hasNewMountApiBool
+}
+
+func fsopen(fsName string, flags int) (*os.File, error) {
+	// Make sure we always set O_CLOEXEC.
+	flags |= unix.FSOPEN_CLOEXEC
+	fd, err := unix.Fsopen(fsName, flags)
+	if err != nil {
+		return nil, os.NewSyscallError("fsopen "+fsName, err)
+	}
+	return os.NewFile(uintptr(fd), "fscontext:"+fsName), nil
+}
+
+func fsmount(ctx *os.File, flags, mountAttrs int) (*os.File, error) {
+	// Make sure we always set O_CLOEXEC.
+	flags |= unix.FSMOUNT_CLOEXEC
+	fd, err := unix.Fsmount(int(ctx.Fd()), flags, mountAttrs)
+	if err != nil {
+		return nil, os.NewSyscallError("fsmount "+ctx.Name(), err)
+	}
+	return os.NewFile(uintptr(fd), "fsmount:"+ctx.Name()), nil
+}
+
+func newPrivateProcMount() (*os.File, error) {
+	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
+	if err != nil {
+		return nil, err
+	}
+	defer procfsCtx.Close()
+
+	// Try to configure hidepid=ptraceable,subset=pid if possible, but ignore errors.
+	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
+	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "subset", "pid")
+
+	// Get an actual handle.
+	if err := unix.FsconfigCreate(int(procfsCtx.Fd())); err != nil {
+		return nil, os.NewSyscallError("fsconfig create procfs", err)
+	}
+	return fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_RDONLY|unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
+}
+
+func openTree(dir *os.File, path string, flags uint) (*os.File, error) {
+	dirFd := -int(unix.EBADF)
+	dirName := "."
+	if dir != nil {
+		dirFd = int(dir.Fd())
+		dirName = dir.Name()
+	}
+	// Make sure we always set O_CLOEXEC.
+	flags |= unix.OPEN_TREE_CLOEXEC
+	fd, err := unix.OpenTree(dirFd, path, flags)
+	if err != nil {
+		return nil, &os.PathError{Op: "open_tree", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(fd), dirName+"/"+path), nil
+}
+
+func clonePrivateProcMount() (_ *os.File, Err error) {
+	// Try to make a clone without using AT_RECURSIVE if we can. If this works,
+	// we can be sure there are no over-mounts and so if the root is valid then
+	// we're golden. Otherwise, we have to deal with over-mounts.
+	procfsHandle, err := openTree(nil, "/proc", unix.OPEN_TREE_CLONE)
+	if err != nil {
+		procfsHandle, err = openTree(nil, "/proc", unix.OPEN_TREE_CLONE|unix.AT_RECURSIVE)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("creating a detached procfs clone: %w", err)
+	}
+	defer func() {
+		if Err != nil {
+			_ = procfsHandle.Close()
+		}
+	}()
+	if err := verifyProcRoot(procfsHandle); err != nil {
+		return nil, err
+	}
+	return procfsHandle, nil
+}
+
+func privateProcRoot() (*os.File, error) {
+	if !hasNewMountApi() {
+		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
+	}
+	// Try to create a new procfs mount from scratch if we can. This ensures we
+	// can get a procfs mount even if /proc is fake (for whatever reason).
+	procRoot, err := newPrivateProcMount()
+	if err != nil {
+		// Try to clone /proc then...
+		procRoot, err = clonePrivateProcMount()
+	}
+	return procRoot, err
+}
+
+var (
 	procRootHandle *os.File
 	procRootError  error
 	procRootOnce   sync.Once
@@ -62,10 +180,7 @@ var (
 	errUnsafeProcfs = errors.New("unsafe procfs detected")
 )
 
-func doGetProcRoot() (_ *os.File, Err error) {
-	// TODO: Use fsopen or open_tree to get a safe handle that cannot be
-	// over-mounted and we can absolutely verify.
-
+func unsafeHostProcRoot() (_ *os.File, Err error) {
 	procRoot, err := os.OpenFile("/proc", unix.O_PATH|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
@@ -79,6 +194,17 @@ func doGetProcRoot() (_ *os.File, Err error) {
 		return nil, err
 	}
 	return procRoot, nil
+}
+
+func doGetProcRoot() (*os.File, error) {
+	procRoot, err := privateProcRoot()
+	if err != nil {
+		// Fall back to using a /proc handle if making a private mount failed.
+		// If we have openat2, at least we can avoid some kinds of over-mount
+		// attacks, but without openat2 there's not much we can do.
+		procRoot, err = unsafeHostProcRoot()
+	}
+	return procRoot, err
 }
 
 func getProcRoot() (*os.File, error) {
@@ -172,6 +298,11 @@ func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err err
 		if err != nil {
 			return nil, nil, fmt.Errorf("%w: %w", errUnsafeProcfs, err)
 		}
+		defer func() {
+			if Err != nil {
+				_ = handle.Close()
+			}
+		}()
 		// We can't detect bind-mounts of different parts of procfs on top of
 		// /proc (a-la RESOLVE_NO_XDEV), but we can at least be sure that we
 		// aren't on the wrong filesystem here.
@@ -184,16 +315,96 @@ func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err err
 	return handle, runtime.UnlockOSThread, nil
 }
 
+var (
+	hasStatxMountIdBool bool
+	hasStatxMountIdOnce sync.Once
+)
+
+func hasStatxMountId() bool {
+	hasStatxMountIdOnce.Do(func() {
+		var (
+			stx unix.Statx_t
+			// We don't care which mount ID we get. The kernel will give us the
+			// unique one if it is supported.
+			wantStxMask uint32 = unix.STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
+		)
+		err := unix.Statx(-int(unix.EBADF), "/", 0, int(wantStxMask), &stx)
+		hasStatxMountIdBool = (err == nil && (stx.Mask&wantStxMask != 0))
+	})
+	return hasStatxMountIdBool
+}
+
+func checkSymlinkOvermount(dir *os.File, path string) error {
+	// If we don't have statx(STATX_MNT_ID*) support, we can't do anything.
+	if !hasStatxMountId() {
+		return nil
+	}
+
+	var (
+		stx unix.Statx_t
+		// We don't care which mount ID we get. The kernel will give us the
+		// unique one if it is supported.
+		wantStxMask uint32 = unix.STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
+	)
+
+	// Get the mntId of our procfs handle.
+	err := unix.Statx(int(dir.Fd()), "", unix.AT_EMPTY_PATH, int(wantStxMask), &stx)
+	if err != nil {
+		return &os.PathError{Op: "statx", Path: dir.Name(), Err: err}
+	}
+	if stx.Mask&wantStxMask == 0 {
+		// It's not a kernel limitation, for some reason we couldn't get a
+		// mount ID. Assume it's some kind of attack.
+		return fmt.Errorf("%w: could not get mnt id of dir %s", errUnsafeProcfs, dir.Name())
+	}
+	expectedMountId := stx.Mnt_id
+
+	// Get the mntId of the target symlink.
+	stx = unix.Statx_t{}
+	err = unix.Statx(int(dir.Fd()), path, unix.AT_SYMLINK_NOFOLLOW, int(wantStxMask), &stx)
+	if err != nil {
+		return &os.PathError{Op: "statx", Path: dir.Name() + "/" + path, Err: err}
+	}
+	if stx.Mask&wantStxMask == 0 {
+		// It's not a kernel limitation, for some reason we couldn't get a
+		// mount ID. Assume it's some kind of attack.
+		return fmt.Errorf("%w: could not get mnt id of symlink %s", errUnsafeProcfs, path)
+	}
+	gotMountId := stx.Mnt_id
+
+	// As long as the directory mount is alive, even with wrapping mount IDs,
+	// we would expect to see a different mount ID here. (Of course, if we're
+	// using unsafeHostProcRoot() then an attaker could change this after we
+	// did this check.)
+	if expectedMountId != gotMountId {
+		return fmt.Errorf("%w: symlink %s/%s has an overmount obscuring the real link (mount ids do not match %d != %d)", errUnsafeProcfs, dir.Name(), path, expectedMountId, gotMountId)
+	}
+	return nil
+}
+
 func rawProcSelfFdReadlink(fd int) (string, error) {
 	procSelfFd, closer, err := procThreadSelf("fd/")
 	if err != nil {
 		return "", fmt.Errorf("get safe /proc/thread-self/fd handle: %w", err)
 	}
+	defer procSelfFd.Close()
 	defer closer()
-	// NOTE: It is possible for an attacker to bind-mount on top of the
-	// /proc/self/fd/... symlink, and there is currently no way for us to
-	// detect this. So we just have to assume that hasn't happened...
-	return readlinkatFile(procSelfFd, strconv.Itoa(fd))
+
+	// Try to detect if there is a mount on top of the symlink we are about to
+	// read. If we are using unsafeHostProcRoot(), this could change after we
+	// check it (and there's nothing we can do about that) but for
+	// privateProcRoot() this should be guaranteed to be safe (at least since
+	// Linux 5.12[1], when anonymous mount namespaces were completely isolated
+	// from external mounts including mount propagation events).
+	//
+	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
+	// onto targets that reside on shared mounts").
+	fdStr := strconv.Itoa(fd)
+	if err := checkSymlinkOvermount(procSelfFd, fdStr); err != nil {
+		return "", fmt.Errorf("check safety of fd %d proc magiclink: %w", fd, err)
+	}
+	// Get the contents of the link.
+	return readlinkatFile(procSelfFd, fdStr)
 }
 
 func procSelfFdReadlink(f *os.File) (string, error) {

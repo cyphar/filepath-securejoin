@@ -55,6 +55,123 @@ func verifyProcRoot(procRoot *os.File) error {
 }
 
 var (
+	hasNewMountApiBool bool
+	hasNewMountApiOnce sync.Once
+)
+
+func hasNewMountApi() bool {
+	hasNewMountApiOnce.Do(func() {
+		// All of the pieces of the new mount API we use (fsopen, fsconfig,
+		// fsmount, open_tree) were added together in Linux 5.1[1,2], so we can
+		// just check for one of the syscalls and the others should also be
+		// available.
+		//
+		// Just try to use open_tree(2) to open a file without OPEN_TREE_CLONE.
+		// This is equivalent to openat(2), but tells us if open_tree is
+		// available (and thus all of the other basic new mount API syscalls).
+		// open_tree(2) is most light-weight syscall to test here.
+		//
+		// [1]: merge commit 400913252d09
+		// [2]: <https://lore.kernel.org/lkml/153754740781.17872.7869536526927736855.stgit@warthog.procyon.org.uk/>
+		fd, err := unix.OpenTree(-int(unix.EBADF), "/", unix.OPEN_TREE_CLOEXEC)
+		if err == nil {
+			hasNewMountApiBool = true
+			_ = unix.Close(fd)
+		}
+	})
+	return hasNewMountApiBool
+}
+
+func fsopen(fsName string, flags int) (*os.File, error) {
+	// Make sure we always set O_CLOEXEC.
+	flags |= unix.FSOPEN_CLOEXEC
+	fd, err := unix.Fsopen(fsName, flags)
+	if err != nil {
+		return nil, os.NewSyscallError("fsopen "+fsName, err)
+	}
+	return os.NewFile(uintptr(fd), "fscontext:"+fsName), nil
+}
+
+func fsmount(ctx *os.File, flags, mountAttrs int) (*os.File, error) {
+	// Make sure we always set O_CLOEXEC.
+	flags |= unix.FSMOUNT_CLOEXEC
+	fd, err := unix.Fsmount(int(ctx.Fd()), flags, mountAttrs)
+	if err != nil {
+		return nil, os.NewSyscallError("fsmount "+ctx.Name(), err)
+	}
+	return os.NewFile(uintptr(fd), "fsmount:"+ctx.Name()), nil
+}
+
+func newPrivateProcMount() (*os.File, error) {
+	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
+	if err != nil {
+		return nil, err
+	}
+	defer procfsCtx.Close()
+
+	// Try to configure hidepid=ptraceable,subset=pid if possible, but ignore errors.
+	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
+	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "subset", "pid")
+
+	// Get an actual handle.
+	if err := unix.FsconfigCreate(int(procfsCtx.Fd())); err != nil {
+		return nil, os.NewSyscallError("fsconfig create procfs", err)
+	}
+	return fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_RDONLY|unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
+}
+
+func openTree(dir *os.File, path string, flags uint) (*os.File, error) {
+	dirFd := -int(unix.EBADF)
+	dirName := "."
+	if dir != nil {
+		dirFd = int(dir.Fd())
+		dirName = dir.Name()
+	}
+	// Make sure we always set O_CLOEXEC.
+	flags |= unix.OPEN_TREE_CLOEXEC
+	fd, err := unix.OpenTree(dirFd, path, flags)
+	if err != nil {
+		return nil, &os.PathError{Op: "open_tree", Path: path, Err: err}
+	}
+	return os.NewFile(uintptr(fd), dirName+"/"+path), nil
+}
+
+func clonePrivateProcMount() (*os.File, error) {
+	// Try to make a clone without using AT_RECURSIVE if we can. If this works,
+	// we can be sure there are no over-mounts and so if the root is valid then
+	// we're golden. Otherwise, we have to deal with over-mounts.
+	procfsHandle, err := openTree(nil, "/proc", unix.OPEN_TREE_CLONE)
+	if err != nil {
+		procfsHandle, err = openTree(nil, "/proc", unix.OPEN_TREE_CLONE|unix.AT_RECURSIVE)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("creating a detached procfs clone: %w", err)
+	}
+	if err := verifyProcRoot(procfsHandle); err != nil {
+		_ = procfsHandle.Close()
+		return nil, err
+	}
+	// TODO: Add support for checking for overmounts inside our /proc clone by
+	// using listmounts(2) or checking stx_mnt_id from statx() when doing
+	// procSelfFdReadlink().
+	return procfsHandle, nil
+}
+
+func privateProcRoot() (*os.File, error) {
+	if !hasNewMountApi() {
+		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
+	}
+	// Try to create a new procfs mount from scratch if we can. This ensures we
+	// can get a procfs mount even if /proc is fake (for whatever reason).
+	procRoot, err := newPrivateProcMount()
+	if err != nil {
+		// Try to clone /proc then...
+		procRoot, err = clonePrivateProcMount()
+	}
+	return procRoot, err
+}
+
+var (
 	procRootHandle *os.File
 	procRootError  error
 	procRootOnce   sync.Once
@@ -62,16 +179,24 @@ var (
 	errUnsafeProcfs = errors.New("unsafe procfs detected")
 )
 
-func doGetProcRoot() (*os.File, error) {
-	// TODO: Use fsopen or open_tree to get a safe handle that cannot be
-	// over-mounted and we can absolutely verify.
-
+func unsafeHostProcRoot() (*os.File, error) {
 	procRoot, err := os.OpenFile("/proc", unix.O_PATH|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
 	if err := verifyProcRoot(procRoot); err != nil {
 		return nil, err
+	}
+	return procRoot, nil
+}
+
+func doGetProcRoot() (*os.File, error) {
+	procRoot, err := privateProcRoot()
+	if err != nil {
+		// Fall back to using a /proc handle if making a private mount failed.
+		// If we have openat2, at least we can avoid some kinds of over-mount
+		// attacks, but without openat2 there's not much we can do.
+		procRoot, err = unsafeHostProcRoot()
 	}
 	return procRoot, nil
 }

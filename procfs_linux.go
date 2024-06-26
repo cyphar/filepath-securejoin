@@ -145,22 +145,46 @@ func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err err
 	}
 
 	// Grab the handle.
-	handle, err := openatFile(procRoot, threadSelf+subpath, unix.O_PATH|unix.O_CLOEXEC, 0)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-	}
-	// We can't detect bind-mounts of different parts of procfs on top of
-	// /proc (a-la RESOLVE_NO_XDEV), but we can at least be sure that we
-	// aren't on the wrong filesystem here.
-	if statfs, err := fstatfs(handle); err != nil {
-		return nil, nil, err
-	} else if statfs.Type != PROC_SUPER_MAGIC {
-		return nil, nil, fmt.Errorf("%w: incorrect /proc/%s%s filesystem type 0x%x", errUnsafeProcfs, threadSelf, subpath, statfs.Type)
+	var handle *os.File
+	if hasOpenat2() {
+		// We prefer being able to use RESOLVE_NO_XDEV if we can, to be
+		// absolutely sure we are operating on a clean /proc handle that
+		// doesn't have any cheeky overmounts that could trick us (including
+		// symlink mounts on top of /proc/thread-self). RESOLVE_BENEATH isn't
+		// stricly needed, but just use it since we have it.
+		//
+		// NOTE: /proc/self is technically a magic-link (the contents of the
+		//       symlink are generated dynamically), but it doesn't use
+		//       nd_jump_link() so RESOLVE_NO_MAGICLINKS allows it.
+		//
+		// NOTE: We MUST NOT use RESOLVE_IN_ROOT here, as openat2File uses
+		//       procSelfFdReadlink to clean up the returned f.Name() if we use
+		//       RESOLVE_IN_ROOT (which would lead to an infinite recursion).
+		handle, err = openat2File(procRoot, threadSelf+subpath, &unix.OpenHow{
+			Flags:   unix.O_PATH | unix.O_CLOEXEC,
+			Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_XDEV | unix.RESOLVE_NO_MAGICLINKS,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		}
+	} else {
+		handle, err = openatFile(procRoot, threadSelf+subpath, unix.O_PATH|unix.O_CLOEXEC, 0)
+		if err != nil {
+			return nil, nil, fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		}
+		// We can't detect bind-mounts of different parts of procfs on top of
+		// /proc (a-la RESOLVE_NO_XDEV), but we can at least be sure that we
+		// aren't on the wrong filesystem here.
+		if statfs, err := fstatfs(handle); err != nil {
+			return nil, nil, err
+		} else if statfs.Type != PROC_SUPER_MAGIC {
+			return nil, nil, fmt.Errorf("%w: incorrect /proc/self/fd filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
+		}
 	}
 	return handle, runtime.UnlockOSThread, nil
 }
 
-func procSelfFdReadlink(f *os.File) (string, error) {
+func rawProcSelfFdReadlink(fd int) (string, error) {
 	procSelfFd, closer, err := procThreadSelf("fd/")
 	if err != nil {
 		return "", fmt.Errorf("get safe /proc/thread-self/fd handle: %w", err)
@@ -169,7 +193,11 @@ func procSelfFdReadlink(f *os.File) (string, error) {
 	// NOTE: It is possible for an attacker to bind-mount on top of the
 	// /proc/self/fd/... symlink, and there is currently no way for us to
 	// detect this. So we just have to assume that hasn't happened...
-	return readlinkatFile(procSelfFd, strconv.Itoa(int(f.Fd())))
+	return readlinkatFile(procSelfFd, strconv.Itoa(fd))
+}
+
+func procSelfFdReadlink(f *os.File) (string, error) {
+	return rawProcSelfFdReadlink(int(f.Fd()))
 }
 
 var (

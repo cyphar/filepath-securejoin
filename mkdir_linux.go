@@ -136,7 +136,15 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		}
 
 		// Get a handle to the next component.
-		nextDir, err := openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		var nextDir *os.File
+		if hasOpenat2() {
+			nextDir, err = openat2File(currentDir, part, &unix.OpenHow{
+				Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_DIRECTORY | unix.O_CLOEXEC,
+				Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_XDEV,
+			})
+		} else {
+			nextDir, err = openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		}
 		if err != nil {
 			return nil, err
 		}

@@ -55,14 +55,14 @@ func verifyProcRoot(procRoot *os.File) error {
 }
 
 var (
-	procSelfFdHandle *os.File
-	procSelfFdError  error
-	procSelfFdOnce   sync.Once
+	procRootHandle *os.File
+	procRootError  error
+	procRootOnce   sync.Once
 
 	errUnsafeProcfs = errors.New("unsafe procfs detected")
 )
 
-func doGetProcSelfFd() (*os.File, error) {
+func doGetProcRoot() (_ *os.File, Err error) {
 	// TODO: Use fsopen or open_tree to get a safe handle that cannot be
 	// over-mounted and we can absolutely verify.
 
@@ -70,42 +70,105 @@ func doGetProcSelfFd() (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer procRoot.Close()
+	defer func() {
+		if Err != nil {
+			_ = procRoot.Close()
+		}
+	}()
 	if err := verifyProcRoot(procRoot); err != nil {
 		return nil, err
 	}
+	return procRoot, nil
+}
 
-	handle, err := openatFile(procRoot, "self/fd", unix.O_PATH|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+func getProcRoot() (*os.File, error) {
+	procRootOnce.Do(func() {
+		procRootHandle, procRootError = doGetProcRoot()
+	})
+	return procRootHandle, procRootError
+}
+
+var (
+	haveProcThreadSelf     bool
+	haveProcThreadSelfOnce sync.Once
+)
+
+type procThreadSelfCloser func()
+
+// procThreadSelf returns a handle to /proc/thread-self/<subpath> (or an
+// equivalent handle on older kernels where /proc/thread-self doesn't exist).
+// Once finished with the handle, you must call the returned closer function
+// (runtime.UnlockOSThread). You must not pass the returned *os.File to other
+// Go threads or use the handle after calling the closer.
+//
+// This is similar to ProcThreadSelf from runc, but with extra hardening
+// applied and using *os.File.
+func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
+	procRoot, err := getProcRoot()
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return nil, nil, err
+	}
+
+	haveProcThreadSelfOnce.Do(func() {
+		// If the kernel doesn't support thread-self, it doesn't matter which
+		// /proc handle we use.
+		_, err := fstatatFile(procRoot, "thread-self", unix.AT_SYMLINK_NOFOLLOW)
+		haveProcThreadSelf = (err == nil)
+	})
+
+	// We need to lock our thread until the caller is done with the handle
+	// because between getting the handle and using it we could get interrupted
+	// by the Go runtime and hit the case where the underlying thread is
+	// swapped out and the original thread is killed, resulting in
+	// pull-your-hair-out-hard-to-debug issues in the caller.
+	runtime.LockOSThread()
+	defer func() {
+		if Err != nil {
+			runtime.UnlockOSThread()
+		}
+	}()
+
+	// Figure out what prefix we want to use.
+	threadSelf := "thread-self/"
+	if !haveProcThreadSelf {
+		/// Pre-3.17 kernels don't have /proc/thread-self, so do it manually.
+		threadSelf = "self/task/" + strconv.Itoa(unix.Gettid()) + "/"
+		if _, err := fstatatFile(procRoot, threadSelf, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+			// In this case, we running in a pid namespace that doesn't match
+			// the /proc mount we have. This can happen inside runc.
+			//
+			// Unfortunately, there is no nice way to get the correct TID to
+			// use here because of the age of the kernel, so we have to just
+			// use /proc/self and hope that it works.
+			threadSelf = "self/"
+		}
+	}
+
+	// Grab the handle.
+	handle, err := openatFile(procRoot, threadSelf+subpath, unix.O_PATH|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", errUnsafeProcfs, err)
 	}
 	// We can't detect bind-mounts of different parts of procfs on top of
 	// /proc (a-la RESOLVE_NO_XDEV), but we can at least be sure that we
 	// aren't on the wrong filesystem here.
 	if statfs, err := fstatfs(handle); err != nil {
-		return nil, err
+		return nil, nil, err
 	} else if statfs.Type != PROC_SUPER_MAGIC {
-		return nil, fmt.Errorf("%w: incorrect /proc/self/fd filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
+		return nil, nil, fmt.Errorf("%w: incorrect /proc/%s%s filesystem type 0x%x", errUnsafeProcfs, threadSelf, subpath, statfs.Type)
 	}
-	return handle, nil
-}
-
-func getProcSelfFd() (*os.File, error) {
-	procSelfFdOnce.Do(func() {
-		procSelfFdHandle, procSelfFdError = doGetProcSelfFd()
-	})
-	return procSelfFdHandle, procSelfFdError
+	return handle, runtime.UnlockOSThread, nil
 }
 
 func procSelfFdReadlink(f *os.File) (string, error) {
+	procSelfFd, closer, err := procThreadSelf("fd/")
+	if err != nil {
+		return "", fmt.Errorf("get safe /proc/thread-self/fd handle: %w", err)
+	}
+	defer closer()
 	// NOTE: It is possible for an attacker to bind-mount on top of the
 	// /proc/self/fd/... symlink, and there is currently no way for us to
 	// detect this. So we just have to assume that hasn't happened...
-	procSelfFd, err := getProcSelfFd()
-	if err != nil {
-		return "", fmt.Errorf("get safe procfs handle: %w", err)
-	}
-	// readlinkat(</proc/self/fd>, "42")
 	return readlinkatFile(procSelfFd, strconv.Itoa(int(f.Fd())))
 }
 

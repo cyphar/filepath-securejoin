@@ -34,6 +34,14 @@ func openatFile(dir *os.File, path string, flags int, mode int) (*os.File, error
 	return os.NewFile(uintptr(fd), fullPath), nil
 }
 
+func fstatatFile(dir *os.File, path string, flags int) (unix.Stat_t, error) {
+	var stat unix.Stat_t
+	if err := unix.Fstatat(int(dir.Fd()), path, &stat, flags); err != nil {
+		return stat, &os.PathError{Op: "fstatat", Path: dir.Name() + "/" + path, Err: err}
+	}
+	return stat, nil
+}
+
 func readlinkatFile(dir *os.File, path string) (string, error) {
 	size := 4096
 	for {

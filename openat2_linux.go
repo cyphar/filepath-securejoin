@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 
 	"golang.org/x/sys/unix"
 )
@@ -20,9 +21,14 @@ import (
 var (
 	hasOpenat2Bool bool
 	hasOpenat2Once sync.Once
+
+	testingForceHasOpenat2 *bool
 )
 
 func hasOpenat2() bool {
+	if testing.Testing() && testingForceHasOpenat2 != nil {
+		return *testingForceHasOpenat2
+	}
 	hasOpenat2Once.Do(func() {
 		fd, err := unix.Openat2(unix.AT_FDCWD, ".", &unix.OpenHow{
 			Flags:   unix.O_PATH | unix.O_CLOEXEC,

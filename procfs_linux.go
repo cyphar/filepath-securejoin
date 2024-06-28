@@ -223,12 +223,7 @@ type procThreadSelfCloser func()
 //
 // This is similar to ProcThreadSelf from runc, but with extra hardening
 // applied and using *os.File.
-func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
-	procRoot, err := getProcRoot()
-	if err != nil {
-		return nil, nil, err
-	}
-
+func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
 	haveProcThreadSelfOnce.Do(func() {
 		// If the kernel doesn't support thread-self, it doesn't matter which
 		// /proc handle we use.
@@ -265,7 +260,10 @@ func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err err
 	}
 
 	// Grab the handle.
-	var handle *os.File
+	var (
+		handle *os.File
+		err    error
+	)
 	if hasOpenat2() {
 		// We prefer being able to use RESOLVE_NO_XDEV if we can, to be
 		// absolutely sure we are operating on a clean /proc handle that
@@ -305,7 +303,11 @@ func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err err
 }
 
 func rawProcSelfFdReadlink(fd int) (string, error) {
-	procSelfFd, closer, err := procThreadSelf("fd/")
+	procRoot, err := getProcRoot()
+	if err != nil {
+		return "", err
+	}
+	procSelfFd, closer, err := procThreadSelf(procRoot, "fd/")
 	if err != nil {
 		return "", fmt.Errorf("get safe /proc/thread-self/fd handle: %w", err)
 	}

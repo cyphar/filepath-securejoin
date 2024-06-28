@@ -16,6 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func requireRoot(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("test requires root")
+	}
+}
+
 func withWithoutOpenat2(t *testing.T, testFn func(t *testing.T)) {
 	for _, useOpenat2 := range []bool{true, false} {
 		useOpenat2 := useOpenat2 // copy iterator

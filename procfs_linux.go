@@ -141,7 +141,7 @@ func clonePrivateProcMount() (_ *os.File, Err error) {
 	// we can be sure there are no over-mounts and so if the root is valid then
 	// we're golden. Otherwise, we have to deal with over-mounts.
 	procfsHandle, err := openTree(nil, "/proc", unix.OPEN_TREE_CLONE)
-	if err != nil {
+	if err != nil || testingForcePrivateProcRootOpenTreeAtRecursive(procfsHandle) {
 		procfsHandle, err = openTree(nil, "/proc", unix.OPEN_TREE_CLONE|unix.AT_RECURSIVE)
 	}
 	if err != nil {
@@ -165,7 +165,7 @@ func privateProcRoot() (*os.File, error) {
 	// Try to create a new procfs mount from scratch if we can. This ensures we
 	// can get a procfs mount even if /proc is fake (for whatever reason).
 	procRoot, err := newPrivateProcMount()
-	if err != nil {
+	if err != nil || testingForcePrivateProcRootOpenTree(procRoot) {
 		// Try to clone /proc then...
 		procRoot, err = clonePrivateProcMount()
 	}
@@ -198,7 +198,7 @@ func unsafeHostProcRoot() (_ *os.File, Err error) {
 
 func doGetProcRoot() (*os.File, error) {
 	procRoot, err := privateProcRoot()
-	if err != nil {
+	if err != nil || testingForceGetProcRootUnsafe(procRoot) {
 		// Fall back to using a /proc handle if making a private mount failed.
 		// If we have openat2, at least we can avoid some kinds of over-mount
 		// attacks, but without openat2 there's not much we can do.
@@ -229,12 +229,7 @@ type procThreadSelfCloser func()
 //
 // This is similar to ProcThreadSelf from runc, but with extra hardening
 // applied and using *os.File.
-func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
-	procRoot, err := getProcRoot()
-	if err != nil {
-		return nil, nil, err
-	}
-
+func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
 	haveProcThreadSelfOnce.Do(func() {
 		// If the kernel doesn't support thread-self, it doesn't matter which
 		// /proc handle we use.
@@ -256,10 +251,10 @@ func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err err
 
 	// Figure out what prefix we want to use.
 	threadSelf := "thread-self/"
-	if !haveProcThreadSelf {
+	if !haveProcThreadSelf || testingForceProcSelfTask() {
 		/// Pre-3.17 kernels don't have /proc/thread-self, so do it manually.
 		threadSelf = "self/task/" + strconv.Itoa(unix.Gettid()) + "/"
-		if _, err := fstatatFile(procRoot, threadSelf, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if _, err := fstatatFile(procRoot, threadSelf, unix.AT_SYMLINK_NOFOLLOW); err != nil || testingForceProcSelf() {
 			// In this case, we running in a pid namespace that doesn't match
 			// the /proc mount we have. This can happen inside runc.
 			//
@@ -271,7 +266,10 @@ func procThreadSelf(subpath string) (_ *os.File, _ procThreadSelfCloser, Err err
 	}
 
 	// Grab the handle.
-	var handle *os.File
+	var (
+		handle *os.File
+		err    error
+	)
 	if hasOpenat2() {
 		// We prefer being able to use RESOLVE_NO_XDEV if we can, to be
 		// absolutely sure we are operating on a clean /proc handle that
@@ -382,8 +380,8 @@ func checkSymlinkOvermount(dir *os.File, path string) error {
 	return nil
 }
 
-func rawProcSelfFdReadlink(fd int) (string, error) {
-	procSelfFd, closer, err := procThreadSelf("fd/")
+func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
+	procSelfFd, closer, err := procThreadSelf(procRoot, "fd/")
 	if err != nil {
 		return "", fmt.Errorf("get safe /proc/thread-self/fd handle: %w", err)
 	}
@@ -405,6 +403,14 @@ func rawProcSelfFdReadlink(fd int) (string, error) {
 	}
 	// Get the contents of the link.
 	return readlinkatFile(procSelfFd, fdStr)
+}
+
+func rawProcSelfFdReadlink(fd int) (string, error) {
+	procRoot, err := getProcRoot()
+	if err != nil {
+		return "", err
+	}
+	return doRawProcSelfFdReadlink(procRoot, fd)
 }
 
 func procSelfFdReadlink(f *os.File) (string, error) {

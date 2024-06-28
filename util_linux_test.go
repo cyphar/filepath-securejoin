@@ -16,6 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func requireRoot(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("test requires root")
+	}
+}
+
 func withWithoutOpenat2(t *testing.T, testFn func(t *testing.T)) {
 	t.Run("openat2=auto", testFn)
 
@@ -27,6 +33,46 @@ func withWithoutOpenat2(t *testing.T, testFn func(t *testing.T)) {
 			}
 			testingForceHasOpenat2 = &useOpenat2
 			defer func() { testingForceHasOpenat2 = nil }()
+
+			testFn(t)
+		})
+	}
+}
+
+func testForceGetProcRoot(t *testing.T, testFn func(t *testing.T, expectOvermounts bool)) {
+	for _, test := range []struct {
+		name             string
+		forceGetProcRoot forceGetProcRootLevel
+		expectOvermounts bool
+	}{
+		{`procfd="fsopen()"`, forceGetProcRootDefault, false},
+		{`procfd="open_tree_clone"`, forceGetProcRootOpenTree, false},
+		{`procfd="open_tree_clone(AT_RECURSIVE)"`, forceGetProcRootOpenTreeAtRecursive, true},
+		{`procfd="open()"`, forceGetProcRootUnsafe, true},
+	} {
+		test := test // copy iterator
+		t.Run(test.name, func(t *testing.T) {
+			testingForceGetProcRoot = &test.forceGetProcRoot
+			defer func() { testingForceGetProcRoot = nil }()
+
+			testFn(t, test.expectOvermounts)
+		})
+	}
+}
+
+func testForceProcThreadSelf(t *testing.T, testFn func(t *testing.T)) {
+	for _, test := range []struct {
+		name                string
+		forceProcThreadSelf forceProcThreadSelfLevel
+	}{
+		{`thread-self="thread-self"`, forceProcThreadSelfDefault},
+		{`thread-self="self/task"`, forceProcSelfTask},
+		{`thread-self="self"`, forceProcSelf},
+	} {
+		test := test // copy iterator
+		t.Run(test.name, func(t *testing.T) {
+			testingForceProcThreadSelf = &test.forceProcThreadSelf
+			defer func() { testingForceProcThreadSelf = nil }()
 
 			testFn(t)
 		})

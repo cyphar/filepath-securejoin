@@ -9,6 +9,7 @@ package securejoin
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -93,6 +94,27 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		return nil, fmt.Errorf("%w: yet-to-be-created path %q contains '..' components", unix.ENOENT, remainingPath)
 	}
 
+	// Make sure the mode doesn't have any type bits.
+	mode &^= unix.S_IFMT
+	// What properties do we expect any newly created directories to have?
+	var (
+		// While umask(2) is a per-thread property, and thus this value could
+		// vary between threads, a functioning Go program would LockOSThread
+		// threads with different umasks and so we don't need to LockOSThread
+		// for this entire mkdirat loop (if we are in the locked thread with a
+		// different umask, we are already locked and there's nothing for us to
+		// do -- and if not then it doesn't matter which thread we run on and
+		// there's nothing for us to do).
+		expectedMode = uint32(unix.S_IFDIR | (mode &^ getUmask()))
+
+		// We would want to get the fs[ug]id here, but we can't access those
+		// from userspace. In practice, nobody uses setfs[ug]id() anymore, so
+		// just use the effective [ug]id (which is equivalent to the fs[ug]id
+		// for programs that don't use setfs[ug]id).
+		expectedUid = uint32(unix.Geteuid())
+		expectedGid = uint32(unix.Getegid())
+	)
+
 	// Create the remaining components.
 	for _, part := range remainingParts {
 		switch part {
@@ -120,6 +142,42 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		}
 		_ = currentDir.Close()
 		currentDir = nextDir
+
+		// Make sure that the directory matches what we expect. An attacker
+		// could have swapped the directory between us making it and opening
+		// it. There's no way for us to be sure that the directory is
+		// _precisely_ the same as the directory we created, but if we are in
+		// an empty directory with the same owner and mode as the one we
+		// created then there is nothing the attacker could do with this new
+		// directory that they couldn't do with the old one.
+		if stat, err := fstat(currentDir); err != nil {
+			return nil, fmt.Errorf("check newly created directory: %w", err)
+		} else {
+			if stat.Mode != expectedMode {
+				return nil, fmt.Errorf("%w: newly created directory %q has incorrect mode 0o%.3o (expected 0o%.3o)", errPossibleAttack, currentDir.Name(), stat.Mode, expectedMode)
+			}
+			if stat.Uid != expectedUid || stat.Gid != expectedGid {
+				return nil, fmt.Errorf("%w: newly created directory %q has incorrect owner %d:%d (expected %d:%d)", errPossibleAttack, currentDir.Name(), stat.Uid, stat.Gid, expectedUid, expectedGid)
+			}
+			// Re-open our O_PATH handle for the directory with O_RDONLY so we
+			// can check if it the directory is empty. This is safe to do with
+			// open(2) because there is no way for "." to be replaced or
+			// mounted over.
+			if dir, err := openatFile(currentDir, ".", unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0); err != nil {
+				return nil, fmt.Errorf("%w: re-open newly created directory %q: %w", errPossibleAttack, currentDir.Name(), err)
+			} else {
+				// We only need to check for a single entry, and we should get EOF
+				// if the directory is empty.
+				_, err := dir.Readdirnames(1)
+				_ = dir.Close()
+				if !errors.Is(err, io.EOF) {
+					if err == nil {
+						err = fmt.Errorf("%w: newly created directory %q is non-empty", errPossibleAttack, currentDir.Name())
+					}
+					return nil, fmt.Errorf("check if newly created directory %q is empty: %w", currentDir.Name(), err)
+				}
+			}
+		}
 	}
 	return currentDir, nil
 }

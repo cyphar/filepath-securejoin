@@ -32,7 +32,7 @@ type input struct {
 }
 
 // Test basic handling of symlink expansion.
-func TestSymlink(t *testing.T) {
+func testSymlink(t *testing.T) {
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)

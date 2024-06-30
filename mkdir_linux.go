@@ -48,7 +48,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 	}
 
 	// Try to open as much of the path as possible.
-	currentDir, remainingPath, err := partialLookupInRoot(root, unsafePath)
+	currentDir, remainingPath, err := partialLookupInRoot(root, unsafePath, false)
 	if err != nil {
 		return nil, fmt.Errorf("find existing subpath of %q: %w", unsafePath, err)
 	}

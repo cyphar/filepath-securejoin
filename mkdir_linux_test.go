@@ -110,7 +110,7 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll func(t *testing.T, root, unsafePa
 
 				// Before trying to make the tree, figure out what
 				// components don't exist yet so we can check them later.
-				handle, remainingPath, err := partialLookupInRoot(rootDir, test.unsafePath)
+				handle, remainingPath, err := partialLookupInRoot(rootDir, test.unsafePath, false)
 				handleName := "<nil>"
 				if handle != nil {
 					handleName = handle.Name()

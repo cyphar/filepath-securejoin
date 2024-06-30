@@ -29,29 +29,7 @@ func IsNotExist(err error) bool {
 	return errors.Is(err, os.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.ENOENT)
 }
 
-// SecureJoinVFS joins the two given path components (similar to Join) except
-// that the returned path is guaranteed to be scoped inside the provided root
-// path (when evaluated). Any symbolic links in the path are evaluated with the
-// given root treated as the root of the filesystem, similar to a chroot. The
-// filesystem state is evaluated through the given VFS interface (if nil, the
-// standard os.* family of functions are used).
-//
-// Note that the guarantees provided by this function only apply if the path
-// components in the returned string are not modified (in other words are not
-// replaced with symlinks on the filesystem) after this function has returned.
-// Such a symlink race is necessarily out-of-scope of SecureJoin.
-//
-// NOTE: Due to the above limitation, Linux users are strongly encouraged to
-// use OpenInRoot instead, which does safely protect against these kinds of
-// attacks. There is no way to solve this problem with SecureJoinVFS because
-// the API is fundamentally wrong (you cannot return a "safe" path string and
-// guarantee it won't be modified afterwards).
-//
-// Volume names in unsafePath are always discarded, regardless if they are
-// provided via direct input or when evaluating symlinks. Therefore:
-//
-// "C:\Temp" + "D:\path\to\file.txt" results in "C:\Temp\path\to\file.txt"
-func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
+func legacySecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
 	// Use the os.* VFS implementation if none was specified.
 	if vfs == nil {
 		vfs = osVFS{}
@@ -121,10 +99,4 @@ func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
 	// but for safety clean up the path before joining it to the root.
 	finalPath := filepath.Join(string(filepath.Separator), currentPath)
 	return filepath.Join(root, finalPath), nil
-}
-
-// SecureJoin is a wrapper around SecureJoinVFS that just uses the os.* library
-// of functions as the VFS. If in doubt, use this function over SecureJoinVFS.
-func SecureJoin(root, unsafePath string) (string, error) {
-	return SecureJoinVFS(root, unsafePath, nil)
 }

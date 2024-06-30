@@ -32,7 +32,7 @@ type input struct {
 }
 
 // Test basic handling of symlink expansion.
-func TestSymlink(t *testing.T) {
+func testSymlink(t *testing.T) {
 	dir := t.TempDir()
 	dir, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)
@@ -75,6 +75,10 @@ func TestSymlink(t *testing.T) {
 		}
 		assert.Equalf(t, test.expected, got, "securejoin(%q, %q)", test.root, test.unsafe)
 	}
+}
+
+func TestSymlink(t *testing.T) {
+	withWithoutOpenat2(t, testSymlink)
 }
 
 // In a path without symlinks, SecureJoin is equivalent to Clean+Join.

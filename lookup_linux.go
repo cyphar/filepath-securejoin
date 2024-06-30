@@ -116,11 +116,23 @@ func (s *symlinkStack) PopLastSymlink() (*os.File, string, bool) {
 	return tailEntry.dir, tailEntry.remainingPath, true
 }
 
+const maxUnsafeHallucinateDirectoryTries = 20
+
+var errTooManyFakeDirectories = errors.New("encountered too many non-existent paths")
+
 // partialLookupInRoot tries to lookup as much of the request path as possible
 // within the provided root (a-la RESOLVE_IN_ROOT) and opens the final existing
 // component of the requested path, returning a file handle to the final
 // existing component and a string containing the remaining path components.
-func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string, Err error) {
+//
+// If unsafeHallucinateDirectories is true, partialLookupInRoot will try to
+// emulate the legacy SecureJoin behaviour of treating non-existent paths as
+// though they are directories to try to resolve as much of the path as
+// possible. In practice, this means that a path like "a/b/doesnotexist/../c"
+// will end up being resolved as "a/b/c" if possible. Note that dangling
+// symlinks (a symlink that points to a non-existent path) will still result in
+// an error being returned, due to how openat2 handles symlinks.
+func partialLookupInRoot(root *os.File, unsafePath string, unsafeHallucinateDirectories bool) (_ *os.File, _ string, Err error) {
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 
 	// This is very similar to SecureJoin, except that we operate on the
@@ -129,7 +141,7 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 
 	// Try to use openat2 if possible.
 	if hasOpenat2() {
-		return partialLookupOpenat2(root, unsafePath)
+		return partialLookupOpenat2(root, unsafePath, unsafeHallucinateDirectories)
 	}
 
 	// Get the "actual" root path from /proc/self/fd. This is necessary if the
@@ -168,7 +180,9 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 	defer symlinkStack.Close()
 
 	var (
-		linksWalked   int
+		linksWalked               int
+		hallucinateDirectoryTries int
+
 		currentPath   string
 		remainingPath = unsafePath
 	)
@@ -235,7 +249,12 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 					return nil, "", fmt.Errorf("root path moved during lookup: %w", err)
 				}
 				// Make sure the path is what we expect.
-				fullPath := logicalRootPath + nextPath
+				var fullPath string
+				if logicalRootPath == "/" {
+					fullPath = nextPath
+				} else {
+					fullPath = logicalRootPath + nextPath
+				}
 				if err := checkProcSelfFdPath(fullPath, nextDir); err != nil {
 					return nil, "", fmt.Errorf("walking into .. had unexpected result: %w", err)
 				}
@@ -249,6 +268,21 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 			if oldDir, remainingPath, ok := symlinkStack.PopLastSymlink(); ok {
 				_ = currentDir.Close()
 				return oldDir, remainingPath, nil
+			}
+			// If we were asked to "hallucinate" non-existent paths as though
+			// they are directories, take the remainingPath and clean it so
+			// that any ".." components that would lead us back to real paths
+			// can get resolved.
+			if oldRemainingPath != "" && unsafeHallucinateDirectories {
+				if newRemainingPath := path.Clean(oldRemainingPath); newRemainingPath != oldRemainingPath {
+					hallucinateDirectoryTries++
+					if hallucinateDirectoryTries > maxUnsafeHallucinateDirectoryTries {
+						return nil, "", fmt.Errorf("%w: trying to reconcile non-existent subpath %q", errTooManyFakeDirectories, oldRemainingPath)
+					}
+					// Continue the lookup using the new remaining path.
+					remainingPath = newRemainingPath
+					continue
+				}
 			}
 			// We have hit a final component that doesn't exist, so we have our
 			// partial open result. Note that we have to use the OLD remaining

@@ -159,7 +159,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 }
 
 func TestProcOvermountSubdir_unsafeHostProcRoot(t *testing.T) {
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// If we use the host /proc directly, we should see overmounts.
 		testProcOvermountSubdir(t, unsafeHostProcRoot, true)
 	})
@@ -169,7 +169,7 @@ func TestProcOvermountSubdir_newPrivateProcMount(t *testing.T) {
 	if !hasNewMountApi() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// If we create our own procfs, the overmounts shouldn't appear.
 		testProcOvermountSubdir(t, newPrivateProcMount, false)
 	})
@@ -179,7 +179,7 @@ func TestProcOvermountSubdir_clonePrivateProcMount(t *testing.T) {
 	if !hasNewMountApi() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// If we use open_tree(2), we don't use AT_RECURSIVE when running in
 		// this test (because the overmounts are not locked mounts) and so we
 		// don't expect to see overmounts.
@@ -188,7 +188,7 @@ func TestProcOvermountSubdir_clonePrivateProcMount(t *testing.T) {
 }
 
 func TestProcOvermountSubdir_doGetProcRoot(t *testing.T) {
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
@@ -200,7 +200,7 @@ func TestProcOvermountSubdir_doGetProcRoot_Mocked(t *testing.T) {
 	if !hasNewMountApi() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
 			testProcOvermountSubdir(t, doGetProcRoot, expectOvermounts)
 		})

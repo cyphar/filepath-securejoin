@@ -49,7 +49,7 @@ jobs:
           name: coverage-${{ runner.os }}-${{ github.job }}-${{ strategy.job-index }}
           path: ${{ env.GOCOVERDIR }}
 
-  test-unix:
+  test-unix-short:
     strategy:
       fail-fast: false
       matrix:
@@ -76,19 +76,30 @@ jobs:
           echo "GOCOVERDIR=$GOCOVERDIR" >>"$GITHUB_ENV"
       - name: unit tests
         run: |
-          go test -v -cover -test.gocoverdir="$GOCOVERDIR" ./...
-          sudo go test -v -cover -test.gocoverdir="$GOCOVERDIR" ./...
+          go test -short -v -cover -test.gocoverdir="$GOCOVERDIR" ./...
+          sudo go test -short -v -cover -test.gocoverdir="$GOCOVERDIR" ./...
       - name: upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ runner.os }}-${{ github.job }}-${{ strategy.job-index }}
           path: ${{ env.GOCOVERDIR }}
 
+  test-linux-stress:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "^1"
+      - name: stress test race protections
+        run: |
+          sudo go test -timeout 1h -v -cover -run 'Test.*Racing' ./...
+
   coverage:
     runs-on: ubuntu-latest
     needs:
       - test-windows
-      - test-unix
+      - test-unix-short
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4

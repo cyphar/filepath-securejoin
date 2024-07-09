@@ -7,6 +7,7 @@
 package securejoin
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,9 +25,10 @@ func requireRoot(t *testing.T) {
 	}
 }
 
-func withWithoutOpenat2(t *testing.T, testFn func(t *testing.T)) {
-	t.Run("openat2=auto", testFn)
-
+func withWithoutOpenat2(t *testing.T, doAuto bool, testFn func(t *testing.T)) {
+	if doAuto {
+		t.Run("openat2=auto", testFn)
+	}
 	for _, useOpenat2 := range []bool{true, false} {
 		useOpenat2 := useOpenat2 // copy iterator
 		t.Run(fmt.Sprintf("openat2=%v", useOpenat2), func(t *testing.T) {
@@ -81,15 +83,48 @@ func testForceProcThreadSelf(t *testing.T, testFn func(t *testing.T)) {
 	}
 }
 
+func hasRenameExchange() bool {
+	err := unix.Renameat2(unix.AT_FDCWD, ".", unix.AT_FDCWD, ".", unix.RENAME_EXCHANGE)
+	return !errors.Is(err, unix.ENOSYS)
+}
+
+func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir *os.File, pathA, pathB string) {
+	var swapped bool
+	swap := func() {
+		_ = unix.Renameat2(int(dir.Fd()), pathA, int(dir.Fd()), pathB, unix.RENAME_EXCHANGE)
+		//unix.Sync()
+		swapped = !swapped
+	}
+
+	for {
+		select {
+		case <-exitCh:
+			return
+		case <-pauseCh:
+			if swapped {
+				swap()
+			}
+			// Wait for caller to unpause us.
+			select {
+			case pauseCh <- struct{}{}:
+			case <-exitCh:
+				return
+			}
+		default:
+			swap()
+		}
+	}
+}
+
 // Format:
 //
-//	dir <name>
-//	file <name> <?content>
+//	dir <name> <?uid:gid:mode>
+//	file <name> <?content> <?uid:gid:mode>
 //	symlink <name> <target>
-//	char <name> <major> <minor>
-//	block <name> <major> <minor>
-//	fifo <name>
-//	sock <name>
+//	char <name> <major> <minor> <?uid:gid:mode>
+//	block <name> <major> <minor> <?uid:gid:mode>
+//	fifo <name> <?uid:gid:mode>
+//	sock <name> <?uid:gid:mode>
 func createInTree(t *testing.T, root, spec string) {
 	f := strings.Fields(spec)
 	if len(f) < 2 {
@@ -97,14 +132,22 @@ func createInTree(t *testing.T, root, spec string) {
 	}
 	inoType, subPath, f := f[0], f[1], f[2:]
 	fullPath := filepath.Join(root, subPath)
+
+	var setOwnerMode *string
 	switch inoType {
 	case "dir":
+		if len(f) >= 1 {
+			setOwnerMode = &f[0]
+		}
 		err := os.MkdirAll(fullPath, 0o755)
 		require.NoError(t, err)
 	case "file":
 		var contents []byte
 		if len(f) >= 1 {
 			contents = []byte(f[0])
+		}
+		if len(f) >= 2 {
+			setOwnerMode = &f[1]
 		}
 		err := os.WriteFile(fullPath, contents, 0o644)
 		require.NoError(t, err)
@@ -118,6 +161,9 @@ func createInTree(t *testing.T, root, spec string) {
 	case "char", "block":
 		if len(f) < 2 {
 			t.Fatalf("invalid spec %q", spec)
+		}
+		if len(f) >= 3 {
+			setOwnerMode = &f[2]
 		}
 
 		major, err := strconv.Atoi(f[0])
@@ -136,6 +182,9 @@ func createInTree(t *testing.T, root, spec string) {
 		err = unix.Mknod(fullPath, mode, int(dev))
 		require.NoErrorf(t, err, "mknod (%s %d:%d) %s", inoType, major, minor, fullPath)
 	case "fifo", "sock":
+		if len(f) >= 1 {
+			setOwnerMode = &f[0]
+		}
 		var mode uint32 = 0o644
 		switch inoType {
 		case "fifo":
@@ -145,6 +194,28 @@ func createInTree(t *testing.T, root, spec string) {
 		}
 		err := unix.Mknod(fullPath, mode, 0)
 		require.NoErrorf(t, err, "mk%s %s", inoType, fullPath)
+	}
+	if setOwnerMode != nil {
+		// <?uid>:<?gid>:<?mode>
+		fields := strings.Split(*setOwnerMode, ":")
+		require.Lenf(t, fields, 3, "set owner-mode format uid:gid:mode")
+		uidStr, gidStr, modeStr := fields[0], fields[1], fields[2]
+
+		if uidStr != "" && gidStr != "" {
+			uid, err := strconv.Atoi(uidStr)
+			require.NoErrorf(t, err, "chown %s: parse uid", fullPath)
+			gid, err := strconv.Atoi(gidStr)
+			require.NoErrorf(t, err, "chown %s: parse gid", fullPath)
+			err = unix.Chown(fullPath, uid, gid)
+			require.NoErrorf(t, err, "chown %s", fullPath)
+		}
+
+		if modeStr != "" {
+			mode, err := strconv.ParseUint(modeStr, 8, 32)
+			require.NoErrorf(t, err, "chmod %s: parse mode", fullPath)
+			err = unix.Chmod(fullPath, uint32(mode))
+			require.NoErrorf(t, err, "chmod %s", fullPath)
+		}
 	}
 }
 

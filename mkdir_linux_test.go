@@ -7,6 +7,8 @@
 package securejoin
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,7 +48,7 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll func(t *testing.T, root, unsafePa
 		"symlink loop/link ../loop/link",
 	}
 
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		for name, test := range map[string]struct {
 			unsafePath  string
 			expectedErr error
@@ -238,5 +240,226 @@ func TestMkdirAllHandle_InvalidMode(t *testing.T) {
 		}
 		_ = handle.Close()
 		return nil
+	})
+}
+
+type racingMkdirMeta struct {
+	passOkCount, passErrCount, failCount int
+	passErrCounts                        map[error]int
+}
+
+func newRacingMkdirMeta() *racingMkdirMeta {
+	return &racingMkdirMeta{
+		passErrCounts: map[error]int{},
+	}
+}
+
+func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode int, allowedErrs []error) {
+	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	require.NoError(t, err, "open root")
+	defer rootDir.Close()
+
+	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)
+	if err != nil {
+		for _, allowedErr := range allowedErrs {
+			if errors.Is(err, allowedErr) {
+				m.passErrCounts[allowedErr]++
+				m.passErrCount++
+				return
+			}
+		}
+		assert.NoError(t, err)
+		m.failCount++
+		return
+	}
+	defer handle.Close()
+
+	// Make sure the handle has the right owner/mode.
+	unixStat, err := fstat(handle)
+	require.NoError(t, err, "stat mkdirall handle")
+	assert.Equal(t, uint32(unix.S_IFDIR|mode), unixStat.Mode, "mkdirall handle mode")
+	assert.Equal(t, uint32(unix.Geteuid()), unixStat.Uid, "mkdirall handle uid")
+	assert.Equal(t, uint32(unix.Getegid()), unixStat.Gid, "mkdirall handle gid")
+	// TODO: Does it make sense to even try to check the handle path?
+	m.passOkCount++
+}
+
+func TestMkdirAllHandle_RacingRename(t *testing.T) {
+	withWithoutOpenat2(t, false, func(t *testing.T) {
+		treeSpec := []string{
+			"dir target/a/b/c",
+			"dir swapdir-empty-ok ::0711",
+			"dir swapdir-empty-badmode ::0777",
+			"dir swapdir-nonempty1 ::0711",
+			"file swapdir-nonempty1/aaa",
+			"dir swapdir-nonempty2 ::0711",
+			"dir swapdir-nonempty2/f ::0711",
+			"file swapfile foobar ::0711",
+		}
+
+		type test struct {
+			name         string
+			pathA, pathB string
+			unsafePath   string
+			allowedErrs  []error
+		}
+
+		tests := []test{
+			{"good", "target/a/b/c/d/e", "swapdir-empty-ok", "target/a/b/c/d/e/f/g/h/i/j/k", nil},
+			{"trailing", "target/a/b/c/d/e", "swapdir-empty-badmode", "target/a/b/c/d/e", []error{errPossibleAttack}},
+			{"partial", "target/a/b/c/d/e", "swapdir-empty-badmode", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+			{"trailing", "target/a/b/c/d/e", "swapdir-nonempty1", "target/a/b/c/d/e", []error{errPossibleAttack}},
+			{"partial", "target/a/b/c/d/e", "swapdir-nonempty1", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+			{"trailing", "target/a/b/c/d/e", "swapdir-nonempty2", "target/a/b/c/d/e", []error{errPossibleAttack}},
+			{"partial", "target/a/b/c/d/e", "swapdir-nonempty2", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+			{"trailing", "target/a/b/c/d/e", "swapfile", "target/a/b/c/d/e", []error{unix.ENOTDIR}},
+			{"partial", "target/a/b/c/d/e", "swapfile", "target/a/b/c/d/e/f/g/h/i/j/k", []error{unix.ENOTDIR}},
+		}
+
+		if unix.Geteuid() == 0 {
+			// Add some wrong-uid cases if we are root.
+			treeSpec = append(treeSpec,
+				"dir swapdir-empty-badowner1 123:0:0711",
+				"dir swapdir-empty-badowner2 0:456:0711",
+				"dir swapdir-empty-badowner3 111:222:0711",
+			)
+			tests = append(tests, []test{
+				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner1", "target/a/b/c/d/e", []error{errPossibleAttack}},
+				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner1", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner2", "target/a/b/c/d/e", []error{errPossibleAttack}},
+				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner2", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner3", "target/a/b/c/d/e", []error{errPossibleAttack}},
+				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner3", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+			}...)
+		}
+
+		for _, test := range tests {
+			test := test // copy iterator
+			t.Run(fmt.Sprintf("%s-%s", test.pathB, test.name), func(t *testing.T) {
+				rootCh := make(chan string)
+				defer close(rootCh)
+				go func(rootCh <-chan string) {
+					var root string
+					for {
+						select {
+						case newRoot, ok := <-rootCh:
+							if !ok {
+								return
+							}
+							root = newRoot
+						default:
+							if root != "" {
+								pathA := filepath.Join(root, test.pathA)
+								pathB := filepath.Join(root, test.pathB)
+								_ = unix.Renameat2(unix.AT_FDCWD, pathA, unix.AT_FDCWD, pathB, unix.RENAME_EXCHANGE)
+							}
+						}
+					}
+				}(rootCh)
+
+				// Do several runs to try to catch bugs.
+				var testRuns = 10000
+				if testing.Short() {
+					testRuns = 300
+				}
+				m := newRacingMkdirMeta()
+				for i := 0; i < testRuns; i++ {
+					root := createTree(t, treeSpec...)
+					rootCh <- root
+
+					m.checkMkdirAllHandle_Racing(t, root, test.unsafePath, 0o711, test.allowedErrs)
+
+					// Clean up the root after each run so we don't exhaust all
+					// space in the tmpfs.
+					_ = os.RemoveAll(root)
+				}
+
+				pct := func(count int) string {
+					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(testRuns))
+				}
+
+				// Output some stats.
+				t.Logf("after %d runs: passOk=%s passErr=%s fail=%s",
+					testRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.failCount))
+				if len(m.passErrCounts) > 0 {
+					t.Logf("  passErr breakdown:")
+					for err, count := range m.passErrCounts {
+						t.Logf("   %3.d: %v", count, err)
+					}
+				}
+			})
+		}
+	})
+}
+
+func TestMkdirAllHandle_RacingDelete(t *testing.T) {
+	withWithoutOpenat2(t, false, func(t *testing.T) {
+		treeSpec := []string{
+			"dir target/a/b/c",
+		}
+
+		for _, test := range []struct {
+			name        string
+			rmPath      string
+			unsafePath  string
+			allowedErrs []error
+		}{
+			{"rm-top", "target", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errInvalidDirectory, unix.ENOENT}},
+			{"rm-existing", "target/a/b/c", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errInvalidDirectory, unix.ENOENT}},
+			{"rm-nonexisting", "target/a/b/c/d/e", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errInvalidDirectory, unix.ENOENT}},
+		} {
+			test := test // copy iterator
+			t.Run(test.rmPath, func(t *testing.T) {
+				rootCh := make(chan string)
+				defer close(rootCh)
+				go func(rootCh <-chan string) {
+					var root string
+					for {
+						select {
+						case newRoot, ok := <-rootCh:
+							if !ok {
+								return
+							}
+							root = newRoot
+						default:
+							if root != "" {
+								_ = os.RemoveAll(filepath.Join(root, test.rmPath))
+							}
+						}
+					}
+				}(rootCh)
+
+				// Do several runs to try to catch bugs.
+				var testRuns = 10000
+				if testing.Short() {
+					testRuns = 300
+				}
+				m := newRacingMkdirMeta()
+				for i := 0; i < testRuns; i++ {
+					root := createTree(t, treeSpec...)
+					rootCh <- root
+
+					m.checkMkdirAllHandle_Racing(t, root, test.unsafePath, 0o711, test.allowedErrs)
+
+					// Clean up the root after each run so we don't exhaust all
+					// space in the tmpfs.
+					_ = os.RemoveAll(root + "/..")
+				}
+
+				pct := func(count int) string {
+					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(testRuns))
+				}
+
+				// Output some stats.
+				t.Logf("after %d runs: passOk=%s passErr=%s fail=%s",
+					testRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.failCount))
+				if len(m.passErrCounts) > 0 {
+					t.Logf("  passErr breakdown:")
+					for err, count := range m.passErrCounts {
+						t.Logf("   %3.d: %v", count, err)
+					}
+				}
+			})
+		}
 	})
 }

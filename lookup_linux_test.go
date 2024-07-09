@@ -7,9 +7,11 @@
 package securejoin
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -251,7 +253,7 @@ func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {
 }
 
 func TestPartialLookupInRoot(t *testing.T) {
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		testPartialLookup(t, partialLookupInRoot)
 	})
 }
@@ -263,7 +265,7 @@ func TestPartialOpenat2(t *testing.T) {
 func TestPartialLookupInRoot_BadInode(t *testing.T) {
 	requireRoot(t) // mknod
 
-	withWithoutOpenat2(t, func(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
 		partialLookupFn := partialLookupInRoot
 
 		tree := []string{
@@ -303,6 +305,271 @@ func TestPartialLookupInRoot_BadInode(t *testing.T) {
 				checkPartialLookup(t, partialLookupFn, rootDir, test.unsafePath, test.expected)
 			})
 		}
+	})
+}
+
+type racingLookupMeta struct {
+	pauseCh                                                      chan struct{}
+	passOkCount, passErrCount, skipCount, failCount, badErrCount int // test state counts
+	badNameCount, fixRemainingPathCount, unstableProcSelfFdCount int // workaround counts
+	skipErrCounts                                                map[error]int
+}
+
+func newRacingLookupMeta(pauseCh chan struct{}) *racingLookupMeta {
+	return &racingLookupMeta{
+		pauseCh:       pauseCh,
+		skipErrCounts: map[error]int{},
+	}
+}
+
+func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, unsafePath string, skipErrs []error, allowedResults []lookupResult) {
+	// Similar to checkPartialLookup, but with extra logic for
+	// handling the lookup stopping partly through the lookup.
+	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath)
+	if err != nil {
+		for _, skipErr := range skipErrs {
+			if errors.Is(err, skipErr) {
+				m.skipErrCounts[skipErr]++
+				m.skipCount++
+				return
+			}
+		}
+		for _, allowed := range allowedResults {
+			if allowed.err != nil && errors.Is(err, allowed.err) {
+				m.passErrCount++
+				return
+			}
+		}
+		// If we didn't hit any of the allowed errors, it's an
+		// unexpected error.
+		assert.NoError(t, err)
+		m.badErrCount++
+		return
+	}
+
+	var (
+		handleName string
+		realPath   string
+		unixStat   unix.Stat_t
+		realPaths  []string
+	)
+	if handle != nil {
+		handleName = handle.Name()
+
+		// Get the "proper" name from procSelfFdReadlink.
+		m.pauseCh <- struct{}{}
+		// For some reason, it seems that (at a rate of 0.01% or so) even
+		// though we pause the rename thread is a nonsensical path from
+		// procSelfFdReadlink that looks like the path is still swapped. The
+		// key thing to note is that adding sleeps doesn't seem to help much,
+		// but retrying several times usually ends up with us getting the
+		// "right" result eventually.
+		//
+		// This seems like a kernel bug (or a weird issue with Go channels),
+		// but for now let's just retry a few times and keep track of how many
+		// transitions we saw. If we only see one change, then we can use the
+		// last one and just track the statistics.
+		const readlinkRetryMax = 500
+		realPath, err = procSelfFdReadlink(handle)
+		for i := 0; err == nil && i < readlinkRetryMax; i++ {
+			if last := len(realPaths) - 1; last < 0 || realPath != realPaths[last] {
+				realPaths = append(realPaths, realPath)
+			}
+			realPath, err = procSelfFdReadlink(handle)
+		}
+		<-m.pauseCh
+		require.NoError(t, err, "get real path of returned handle")
+
+		unixStat, err = fstat(handle)
+		require.NoError(t, err, "stat handle")
+
+		_ = handle.Close()
+	}
+
+	assert.LessOrEqualf(t, len(realPaths), 2, "saw more than one transition in procSelfFdReadlink results: %v", realPaths)
+	if len(realPaths) > 1 {
+		m.unstableProcSelfFdCount++
+		assert.Contains(t, realPaths, handleName, "at least one real path should match the handle name if we got more than one real path")
+	}
+
+	if realPath != handleName {
+		// It's possible for handle.Name() to be wrong because while it was
+		// correct when it was set, it might not match if the path was swapped
+		// afterwards (for both openat2 and partialLookupInRoot).
+		m.badNameCount++
+	}
+
+	// It's possible for lookups with ".." components to decide to cut off the
+	// lookup partially through the resolution when dealing with a swapping
+	// attack, so for the purposes of validating our tests we clean up the
+	// remainingPath so that it has all of the ".." components removed (but
+	// include this in our statistics).
+	fullLogicalPath := filepath.Join(realPath, remainingPath)
+	newRemainingPath, err := filepath.Rel(realPath, fullLogicalPath)
+	require.NoErrorf(t, err, "clean remaining path %s", remainingPath)
+	if remainingPath != newRemainingPath {
+		m.fixRemainingPathCount++
+	}
+	remainingPath = newRemainingPath
+
+	gotResult := lookupResult{
+		handlePath:    realPath,
+		remainingPath: remainingPath,
+		fileType:      unixStat.Mode & unix.S_IFMT,
+	}
+	counter := &m.passOkCount
+	if !assert.Contains(t, allowedResults, gotResult) {
+		counter = &m.failCount
+	}
+	(*counter)++
+}
+
+func TestPartialLookup_RacingRename(t *testing.T) {
+	if !hasRenameExchange() {
+		t.Skip("test requires RENAME_EXCHANGE support")
+	}
+
+	withWithoutOpenat2(t, false, func(t *testing.T) {
+		tree := []string{
+			"dir a/b/c/d",
+			"symlink b-link ../b/../b/../b/../b/../b/../b/../b/../b/../b/../b/../b/../b/../b",
+			"symlink c-link ../../b/c/../../b/c/../../b/c/../../b/c/../../b/c/../../b/c/../../b/c/../../b/c/../../b/c",
+			"file file",
+			"symlink bad-link /foobar",
+		}
+
+		var (
+			handlePath      = "/a/b/c/d"
+			remainingPath   = "e"
+			defaultExpected []lookupResult
+		)
+		// The lookup could stop at any component other than /a, so allow all
+		// of them.
+		for handlePath != "/" {
+			defaultExpected = append(defaultExpected, lookupResult{
+				handlePath:    handlePath,
+				remainingPath: remainingPath,
+				fileType:      unix.S_IFDIR,
+			})
+			handlePath, remainingPath = filepath.Dir(handlePath), filepath.Join(filepath.Base(handlePath), remainingPath)
+		}
+		for name, test := range map[string]struct {
+			subPathA, subPathB string
+			unsafePath         string
+			skipErrs           []error
+			allowedResults     []lookupResult
+		}{
+			// Swap a symlink in and out.
+			"swap-dir-link1-basic":   {"a/b", "b-link", "a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-dir-link2-basic":   {"a/b/c", "c-link", "a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-dir-link1-dotdot1": {"a/b", "b-link", "a/b/../b/../b/../b/../b/../b/../b/c/d/../d/../d/../d/../d/../d/e", nil, slices.Clone(defaultExpected)},
+			"swap-dir-link1-dotdot2": {"a/b", "b-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", nil, slices.Clone(defaultExpected)},
+			"swap-dir-link2-dotdot":  {"a/b/c", "c-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", nil, slices.Clone(defaultExpected)},
+			// TODO: Swap a directory.
+			// Swap a non-directory.
+			"swap-dir-file-basic": {"a/b", "file", "a/b/c/d/e", []error{unix.ENOTDIR, unix.ENOENT}, append(
+				// We could hit one of the final paths.
+				slices.Clone(defaultExpected),
+				// We could hit the file and stop resolving.
+				lookupResult{handlePath: "/file", remainingPath: "c/d/e", fileType: unix.S_IFREG},
+			)},
+			"swap-dir-file-dotdot": {"a/b", "file", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", []error{unix.ENOTDIR, unix.ENOENT}, append(
+				// We could hit one of the final paths.
+				slices.Clone(defaultExpected),
+				// We could hit the file and stop resolving.
+				lookupResult{handlePath: "/file", remainingPath: "c/d/e", fileType: unix.S_IFREG},
+			)},
+			// Swap a dangling symlink.
+			"swap-dir-danglinglink-basic":  {"a/b", "bad-link", "a/b/c/d/e", []error{unix.ENOENT}, slices.Clone(defaultExpected)},
+			"swap-dir-danglinglink-dotdot": {"a/b", "bad-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", []error{unix.ENOENT}, slices.Clone(defaultExpected)},
+			// Swap the root.
+			"swap-root-basic":  {".", "../outsideroot", "a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-root-dotdot": {".", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			// Swap one of our walking paths outside the root.
+			"swap-dir-outsideroot-basic": {"a/b", "../outsideroot", "a/b/c/d/e", nil, append(
+				// We could hit the expected path.
+				slices.Clone(defaultExpected),
+				// We could also land in the "outsideroot" path. This is okay
+				// because there was a moment when this directory was inside
+				// the root, and the attacker moved it outside the root. If we
+				// were to go into "..", the lookup would've failed (and we
+				// would get an error here if that wasn't the case).
+				lookupResult{handlePath: "../outsideroot", remainingPath: "c/d/e", fileType: unix.S_IFDIR},
+				lookupResult{handlePath: "../outsideroot/c", remainingPath: "d/e", fileType: unix.S_IFDIR},
+				lookupResult{handlePath: "../outsideroot/c/d", remainingPath: "e", fileType: unix.S_IFDIR},
+			)},
+			"swap-dir-outsideroot-dotdot": {"a/b", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, append(
+				// We could hit the expected path.
+				slices.Clone(defaultExpected),
+				// We could also land in the "outsideroot" path. This is okay
+				// because there was a moment when this directory was inside
+				// the root, and the attacker moved it outside the root.
+				//
+				// Neither openat2 nor partialLookupInRoot will allow us to
+				// walk into ".." in this case (escaping the root), and we
+				// would catch that if it did happen.
+				lookupResult{handlePath: "../outsideroot", remainingPath: "c/d/e", fileType: unix.S_IFDIR},
+				lookupResult{handlePath: "../outsideroot/c", remainingPath: "d/e", fileType: unix.S_IFDIR},
+				lookupResult{handlePath: "../outsideroot/c/d", remainingPath: "e", fileType: unix.S_IFDIR},
+			)},
+		} {
+			test := test // copy iterator
+			test.skipErrs = append(test.skipErrs, errPossibleAttack, errPossibleBreakout)
+			t.Run(name, func(t *testing.T) {
+				root := createTree(t, tree...)
+
+				// Update the handlePath to be inside our root.
+				for idx := range test.allowedResults {
+					test.allowedResults[idx].handlePath = filepath.Join(root, test.allowedResults[idx].handlePath)
+				}
+
+				// Create an "outsideroot" path as a sibling to our root, for
+				// swapping.
+				err := os.MkdirAll(filepath.Join(root, "../outsideroot"), 0o755)
+				require.NoError(t, err)
+
+				rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+				require.NoError(t, err)
+				defer rootDir.Close()
+
+				// Run a goroutine that spams a rename in the root.
+				pauseCh := make(chan struct{})
+				exitCh := make(chan struct{})
+				defer close(exitCh)
+				go doRenameExchangeLoop(pauseCh, exitCh, rootDir, test.subPathA, test.subPathB)
+
+				// Do several runs to try to catch bugs.
+				var testRuns = 10000
+				if testing.Short() {
+					testRuns = 300
+				}
+				m := newRacingLookupMeta(pauseCh)
+				for i := 0; i < testRuns; i++ {
+					m.checkPartialLookup(t, rootDir, test.unsafePath, test.skipErrs, test.allowedResults)
+				}
+
+				pct := func(count int) string {
+					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(testRuns))
+				}
+
+				// Output some stats.
+				t.Logf("after %d runs: passOk=%s passErr=%s skip=%s fail=%s (+badErr=%s)",
+					// runs and breakdown of path-related (pass, fail) as well as skipped runs
+					testRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.skipCount), pct(m.failCount),
+					// failures due to incorrect errors (rather than bad paths)
+					pct(m.badErrCount))
+				t.Logf("  badHandleName=%s fixRemainingPath=%s unstableProcSelfFdCount=%s",
+					// stats for how many test runs had to have some "workarounds"
+					pct(m.badNameCount), pct(m.fixRemainingPathCount), pct(m.unstableProcSelfFdCount))
+				if len(m.skipErrCounts) > 0 {
+					t.Logf("  skipErr breakdown:")
+					for err, count := range m.skipErrCounts {
+						t.Logf("   %3.d: %v", count, err)
+					}
+				}
+			})
+		}
+
 	})
 }
 

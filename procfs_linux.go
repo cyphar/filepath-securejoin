@@ -36,19 +36,19 @@ func fstatfs(f *os.File) (unix.Statfs_t, error) {
 // The kernel guarantees that the root inode of a procfs mount has an
 // f_type of PROC_SUPER_MAGIC and st_ino of PROC_ROOT_INO.
 const (
-	PROC_SUPER_MAGIC = 0x9fa0
-	PROC_ROOT_INO    = 1
+	procSuperMagic = 0x9fa0 // PROC_SUPER_MAGIC
+	procRootIno    = 1      // PROC_ROOT_INO
 )
 
 func verifyProcRoot(procRoot *os.File) error {
 	if statfs, err := fstatfs(procRoot); err != nil {
 		return err
-	} else if statfs.Type != PROC_SUPER_MAGIC {
+	} else if statfs.Type != procSuperMagic {
 		return fmt.Errorf("%w: incorrect procfs root filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
 	}
 	if stat, err := fstat(procRoot); err != nil {
 		return err
-	} else if stat.Ino != PROC_ROOT_INO {
+	} else if stat.Ino != procRootIno {
 		return fmt.Errorf("%w: incorrect procfs root inode number %d", errUnsafeProcfs, stat.Ino)
 	}
 	return nil
@@ -306,7 +306,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 		// aren't on the wrong filesystem here.
 		if statfs, err := fstatfs(handle); err != nil {
 			return nil, nil, err
-		} else if statfs.Type != PROC_SUPER_MAGIC {
+		} else if statfs.Type != procSuperMagic {
 			return nil, nil, fmt.Errorf("%w: incorrect /proc/self/fd filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -380,12 +381,17 @@ func checkSymlinkOvermount(dir *os.File, path string) error {
 	return nil
 }
 
-func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
-	procSelfFd, closer, err := procThreadSelf(procRoot, "fd/")
+func doProcSelfMagiclink[T any](procRoot *os.File, subPath string, fn func(procDirHandle *os.File, base string) (T, error)) (T, error) {
+	// We cannot operate on the magic-link directly with a handle, we need to
+	// create a handle to the parent of the magic-link and then do
+	// single-component operations on it.
+	dir, base := filepath.Dir(subPath), filepath.Base(subPath)
+
+	procDirHandle, closer, err := procThreadSelf(procRoot, dir)
 	if err != nil {
-		return "", fmt.Errorf("get safe /proc/thread-self/fd handle: %w", err)
+		return *new(T), fmt.Errorf("get safe /proc/thread-self/%s handle: %w", dir, err)
 	}
-	defer procSelfFd.Close()
+	defer procDirHandle.Close()
 	defer closer()
 
 	// Try to detect if there is a mount on top of the symlink we are about to
@@ -397,12 +403,15 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 	//
 	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
 	// onto targets that reside on shared mounts").
-	fdStr := strconv.Itoa(fd)
-	if err := checkSymlinkOvermount(procSelfFd, fdStr); err != nil {
-		return "", fmt.Errorf("check safety of fd %d proc magiclink: %w", fd, err)
+	if err := checkSymlinkOvermount(procDirHandle, base); err != nil {
+		return *new(T), fmt.Errorf("check safety of %s proc magiclink: %w", subPath, err)
 	}
-	// Get the contents of the link.
-	return readlinkatFile(procSelfFd, fdStr)
+	return fn(procDirHandle, base)
+}
+
+func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
+	fdPath := fmt.Sprintf("fd/%d", fd)
+	return doProcSelfMagiclink(procRoot, fdPath, readlinkatFile)
 }
 
 func rawProcSelfFdReadlink(fd int) (string, error) {

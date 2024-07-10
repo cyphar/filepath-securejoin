@@ -32,30 +32,30 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 	if handle != nil {
 		defer handle.Close()
 	}
-	if expected.err == nil {
-		if assert.NoError(t, err) {
-			// Check the remainingPath.
-			assert.Equal(t, expected.remainingPath, remainingPath, "remaining path")
-
-			// Check the handle filepath.
-			gotPath, err := procSelfFdReadlink(handle)
-			require.NoError(t, err, "get real path of returned handle")
-			assert.Equal(t, expected.handlePath, gotPath, "real handle path")
-			// Make sure the handle matches the readlink filepath.
-			assert.Equal(t, gotPath, handle.Name(), "handle.Name() matching real handle path")
-
-			// Check the handle type.
-			unixStat, err := fstat(handle)
-			require.NoError(t, err, "fstat handle")
-			assert.Equal(t, expected.fileType, unixStat.Mode&unix.S_IFMT, "handle S_IFMT type")
-		}
-	} else {
+	if expected.err != nil {
 		if assert.Error(t, err) {
 			assert.ErrorIs(t, err, expected.err)
 		} else {
 			t.Errorf("unexpected handle %q", handle.Name())
 		}
+		return
 	}
+	assert.NoError(t, err)
+
+	// Check the remainingPath.
+	assert.Equal(t, expected.remainingPath, remainingPath, "remaining path")
+
+	// Check the handle path.
+	gotPath, err := procSelfFdReadlink(handle)
+	require.NoError(t, err, "get real path of returned handle")
+	assert.Equal(t, expected.handlePath, gotPath, "real handle path")
+	// Make sure the handle matches the readlink path.
+	assert.Equal(t, gotPath, handle.Name(), "handle.Name() matching real handle path")
+
+	// Check the handle type.
+	unixStat, err := fstat(handle)
+	require.NoError(t, err, "fstat handle")
+	assert.Equal(t, expected.fileType, unixStat.Mode&unix.S_IFMT, "handle S_IFMT type")
 }
 
 func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {

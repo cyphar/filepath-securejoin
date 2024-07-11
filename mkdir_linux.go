@@ -74,11 +74,15 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		return nil, fmt.Errorf("finding existing subpath of %q: %w", unsafePath, err)
 	}
 
-	// Check that we actually got a directory.
-	if st, err := currentDir.Stat(); err != nil {
-		return nil, fmt.Errorf("stat existing subpath handle %q: %w", currentDir.Name(), err)
-	} else if !st.IsDir() {
+	// Re-open the path to match the O_DIRECTORY reopen loop later (so that we
+	// always return a non-O_PATH handle). We also check that we actually got a
+	// directory.
+	if reopenDir, err := Reopen(currentDir, unix.O_DIRECTORY|unix.O_CLOEXEC); errors.Is(err, unix.ENOTDIR) {
 		return nil, fmt.Errorf("cannot create subdirectories in %q: %w", currentDir.Name(), unix.ENOTDIR)
+	} else if err != nil {
+		return nil, fmt.Errorf("re-opening handle to %q: %w", currentDir.Name(), err)
+	} else {
+		currentDir = reopenDir
 	}
 
 	remainingParts := strings.Split(remainingPath, string(filepath.Separator))
@@ -135,15 +139,16 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 			return nil, err
 		}
 
-		// Get a handle to the next component.
+		// Get a handle to the next component. O_DIRECTORY means we don't need
+		// to use O_PATH.
 		var nextDir *os.File
 		if hasOpenat2() {
 			nextDir, err = openat2File(currentDir, part, &unix.OpenHow{
-				Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_DIRECTORY | unix.O_CLOEXEC,
+				Flags:   unix.O_NOFOLLOW | unix.O_DIRECTORY | unix.O_CLOEXEC,
 				Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_XDEV,
 			})
 		} else {
-			nextDir, err = openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+			nextDir, err = openatFile(currentDir, part, unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		}
 		if err != nil {
 			return nil, err
@@ -167,24 +172,18 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 			if stat.Uid != expectedUid || stat.Gid != expectedGid {
 				return nil, fmt.Errorf("%w: newly created directory %q has incorrect owner %d:%d (expected %d:%d)", errPossibleAttack, currentDir.Name(), stat.Uid, stat.Gid, expectedUid, expectedGid)
 			}
-			// Re-open our O_PATH handle for the directory with O_RDONLY so we
-			// can check if it the directory is empty. This is safe to do with
-			// open(2) because there is no way for "." to be replaced or
-			// mounted over.
-			if dir, err := openatFile(currentDir, ".", unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0); err != nil {
-				return nil, fmt.Errorf("%w: re-open newly created directory %q: %w", errPossibleAttack, currentDir.Name(), err)
-			} else {
-				// We only need to check for a single entry, and we should get EOF
-				// if the directory is empty.
-				_, err := dir.Readdirnames(1)
-				_ = dir.Close()
-				if !errors.Is(err, io.EOF) {
-					if err == nil {
-						err = fmt.Errorf("%w: newly created directory %q is non-empty", errPossibleAttack, currentDir.Name())
-					}
-					return nil, fmt.Errorf("check if newly created directory %q is empty: %w", currentDir.Name(), err)
+			// Check that the directory is empty. We only need to check for
+			// a single entry, and we should get EOF if the directory is
+			// empty.
+			_, err := currentDir.Readdirnames(1)
+			if !errors.Is(err, io.EOF) {
+				if err == nil {
+					err = fmt.Errorf("%w: newly created directory %q is non-empty", errPossibleAttack, currentDir.Name())
 				}
+				return nil, fmt.Errorf("check if newly created directory %q is empty: %w", currentDir.Name(), err)
 			}
+			// Reset the offset.
+			_, _ = currentDir.Seek(0, unix.SEEK_SET)
 		}
 	}
 	return currentDir, nil

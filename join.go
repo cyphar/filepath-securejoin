@@ -41,6 +41,12 @@ func IsNotExist(err error) bool {
 // replaced with symlinks on the filesystem) after this function has returned.
 // Such a symlink race is necessarily out-of-scope of SecureJoin.
 //
+// NOTE: Due to the above limitation, Linux users are strongly encouraged to
+// use OpenInRoot instead, which does safely protect against these kinds of
+// attacks. There is no way to solve this problem with SecureJoinVFS because
+// the API is fundamentally wrong (you cannot return a "safe" path string and
+// guarantee it won't be modified afterwards).
+//
 // Volume names in unsafePath are always discarded, regardless if they are
 // provided via direct input or when evaluating symlinks. Therefore:
 //

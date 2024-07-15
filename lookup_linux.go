@@ -288,23 +288,11 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 				}
 
 			case os.ModeSymlink:
+				// readlinkat implies AT_EMPTY_PATH.
+				linkDest, err := readlinkatFile(nextDir, "")
 				// We don't need the handle anymore.
 				_ = nextDir.Close()
-
-				// Unfortunately, we cannot readlink through our handle and so
-				// we need to do a separate readlinkat (which could race to
-				// give us an error if the attacker swapped the symlink with a
-				// non-symlink).
-				linkDest, err := readlinkatFile(currentDir, part)
 				if err != nil {
-					if errors.Is(err, unix.EINVAL) {
-						// The part was not a symlink, so assume that it's a
-						// regular file. It is possible for it to be a
-						// directory (if an attacker is swapping a directory
-						// and non-directory at this subpath) but erroring out
-						// here is better anyway.
-						err = fmt.Errorf("%w: path component %q is invalid: %w", errPossibleAttack, part, unix.ENOTDIR)
-					}
 					return nil, "", err
 				}
 

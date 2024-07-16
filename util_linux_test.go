@@ -89,21 +89,11 @@ func hasRenameExchange() bool {
 }
 
 func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir *os.File, pathA, pathB string) {
-	var swapped bool
-	swap := func() {
-		_ = unix.Renameat2(int(dir.Fd()), pathA, int(dir.Fd()), pathB, unix.RENAME_EXCHANGE)
-		//unix.Sync()
-		swapped = !swapped
-	}
-
 	for {
 		select {
 		case <-exitCh:
 			return
 		case <-pauseCh:
-			if swapped {
-				swap()
-			}
 			// Wait for caller to unpause us.
 			select {
 			case pauseCh <- struct{}{}:
@@ -111,7 +101,11 @@ func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir *os
 				return
 			}
 		default:
-			swap()
+			// Do the swap twice so that we only pause when we are in a
+			// "correct" state.
+			for i := 0; i < 2; i++ {
+				_ = unix.Renameat2(int(dir.Fd()), pathA, int(dir.Fd()), pathB, unix.RENAME_EXCHANGE)
+			}
 		}
 	}
 }

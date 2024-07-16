@@ -311,7 +311,7 @@ func TestPartialLookupInRoot_BadInode(t *testing.T) {
 type racingLookupMeta struct {
 	pauseCh                                                      chan struct{}
 	passOkCount, passErrCount, skipCount, failCount, badErrCount int // test state counts
-	badNameCount, fixRemainingPathCount, unstableProcSelfFdCount int // workaround counts
+	badNameCount, fixRemainingPathCount                          int // workaround counts
 	skipErrCounts                                                map[error]int
 }
 
@@ -351,32 +351,13 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 		handleName string
 		realPath   string
 		unixStat   unix.Stat_t
-		realPaths  []string
 	)
 	if handle != nil {
 		handleName = handle.Name()
 
 		// Get the "proper" name from procSelfFdReadlink.
 		m.pauseCh <- struct{}{}
-		// For some reason, it seems that (at a rate of 0.01% or so) even
-		// though we pause the rename thread is a nonsensical path from
-		// procSelfFdReadlink that looks like the path is still swapped. The
-		// key thing to note is that adding sleeps doesn't seem to help much,
-		// but retrying several times usually ends up with us getting the
-		// "right" result eventually.
-		//
-		// This seems like a kernel bug (or a weird issue with Go channels),
-		// but for now let's just retry a few times and keep track of how many
-		// transitions we saw. If we only see one change, then we can use the
-		// last one and just track the statistics.
-		const readlinkRetryMax = 500
 		realPath, err = procSelfFdReadlink(handle)
-		for i := 0; err == nil && i < readlinkRetryMax; i++ {
-			if last := len(realPaths) - 1; last < 0 || realPath != realPaths[last] {
-				realPaths = append(realPaths, realPath)
-			}
-			realPath, err = procSelfFdReadlink(handle)
-		}
 		<-m.pauseCh
 		require.NoError(t, err, "get real path of returned handle")
 
@@ -384,12 +365,6 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 		require.NoError(t, err, "stat handle")
 
 		_ = handle.Close()
-	}
-
-	assert.LessOrEqualf(t, len(realPaths), 2, "saw more than one transition in procSelfFdReadlink results: %v", realPaths)
-	if len(realPaths) > 1 {
-		m.unstableProcSelfFdCount++
-		assert.Contains(t, realPaths, handleName, "at least one real path should match the handle name if we got more than one real path")
 	}
 
 	if realPath != handleName {
@@ -539,10 +514,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 				go doRenameExchangeLoop(pauseCh, exitCh, rootDir, test.subPathA, test.subPathB)
 
 				// Do several runs to try to catch bugs.
-				var testRuns = 10000
-				if testing.Short() {
-					testRuns = 300
-				}
+				const testRuns = 50000
 				m := newRacingLookupMeta(pauseCh)
 				for i := 0; i < testRuns; i++ {
 					m.checkPartialLookup(t, rootDir, test.unsafePath, test.skipErrs, test.allowedResults)
@@ -558,9 +530,9 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 					testRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.skipCount), pct(m.failCount),
 					// failures due to incorrect errors (rather than bad paths)
 					pct(m.badErrCount))
-				t.Logf("  badHandleName=%s fixRemainingPath=%s unstableProcSelfFdCount=%s",
+				t.Logf("  badHandleName=%s fixRemainingPath=%s",
 					// stats for how many test runs had to have some "workarounds"
-					pct(m.badNameCount), pct(m.fixRemainingPathCount), pct(m.unstableProcSelfFdCount))
+					pct(m.badNameCount), pct(m.fixRemainingPathCount))
 				if len(m.skipErrCounts) > 0 {
 					t.Logf("  skipErr breakdown:")
 					for err, count := range m.skipErrCounts {

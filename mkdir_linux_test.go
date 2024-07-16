@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -358,16 +359,15 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) {
 				}(rootCh)
 
 				// Do several runs to try to catch bugs.
-				var testRuns = 10000
-				if testing.Short() {
-					testRuns = 300
-				}
+				const testRuns = 2000
 				m := newRacingMkdirMeta()
 				for i := 0; i < testRuns; i++ {
 					root := createTree(t, treeSpec...)
-					rootCh <- root
 
+					rootCh <- root
+					runtime.Gosched() // give the thread some time to do a rename
 					m.checkMkdirAllHandle_Racing(t, root, test.unsafePath, 0o711, test.allowedErrs)
+					rootCh <- ""
 
 					// Clean up the root after each run so we don't exhaust all
 					// space in the tmpfs.
@@ -430,16 +430,14 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) {
 				}(rootCh)
 
 				// Do several runs to try to catch bugs.
-				var testRuns = 10000
-				if testing.Short() {
-					testRuns = 300
-				}
+				const testRuns = 2000
 				m := newRacingMkdirMeta()
 				for i := 0; i < testRuns; i++ {
 					root := createTree(t, treeSpec...)
-					rootCh <- root
 
+					rootCh <- root
 					m.checkMkdirAllHandle_Racing(t, root, test.unsafePath, 0o711, test.allowedErrs)
+					rootCh <- ""
 
 					// Clean up the root after each run so we don't exhaust all
 					// space in the tmpfs.

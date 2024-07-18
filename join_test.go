@@ -6,21 +6,24 @@ package securejoin
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"syscall"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TODO: These tests won't work on plan9 because it doesn't have symlinks, and
 //       also we use '/' here explicitly which probably won't work on Windows.
 
 func symlink(t *testing.T, oldname, newname string) {
-	if err := os.Symlink(oldname, newname); err != nil {
-		t.Fatal(err)
-	}
+	err := os.Symlink(oldname, newname)
+	require.NoError(t, err)
 }
 
 type input struct {
@@ -29,16 +32,10 @@ type input struct {
 }
 
 // Test basic handling of symlink expansion.
-func TestSymlink(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestSymlink")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+func testSymlink(t *testing.T) {
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
 
 	symlink(t, "somepath", filepath.Join(dir, "etc"))
 	symlink(t, "../../../../../../../../../../../../../etc", filepath.Join(dir, "etclink"))
@@ -65,8 +62,7 @@ func TestSymlink(t *testing.T) {
 
 	for _, test := range tc {
 		got, err := SecureJoin(test.root, test.unsafe)
-		if err != nil {
-			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
+		if !assert.NoErrorf(t, err, "securejoin(%q, %q)", test.root, test.unsafe) {
 			continue
 		}
 		// This is only for OS X, where /etc is a symlink to /private/etc. In
@@ -77,24 +73,15 @@ func TestSymlink(t *testing.T) {
 				test.expected = expected
 			}
 		}
-		if got != test.expected {
-			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
-			continue
-		}
+		assert.Equalf(t, test.expected, got, "securejoin(%q, %q)", test.root, test.unsafe)
 	}
 }
 
 // In a path without symlinks, SecureJoin is equivalent to Clean+Join.
 func TestNoSymlink(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestNoSymlink")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
 
 	tc := []input{
 		{dir, "somepath", filepath.Join(dir, "somepath")},
@@ -116,26 +103,17 @@ func TestNoSymlink(t *testing.T) {
 
 	for _, test := range tc {
 		got, err := SecureJoin(test.root, test.unsafe)
-		if err != nil {
-			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
-		}
-		if got != test.expected {
-			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
+		if assert.NoErrorf(t, err, "securejoin(%q, %q)", test.root, test.unsafe) {
+			assert.Equalf(t, test.expected, got, "securejoin(%q, %q)", test.root, test.unsafe)
 		}
 	}
 }
 
 // Make sure that .. is **not** expanded lexically.
 func TestNonLexical(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestNonLexical")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 	os.MkdirAll(filepath.Join(dir, "cousinparent", "cousin"), 0755)
@@ -155,28 +133,17 @@ func TestNonLexical(t *testing.T) {
 		{dir, "subdir/link3/../test", filepath.Join(dir, "cousinparent", "test")},
 	} {
 		got, err := SecureJoin(test.root, test.unsafe)
-		if err != nil {
-			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
-			continue
-		}
-		if got != test.expected {
-			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
-			continue
+		if assert.NoErrorf(t, err, "securejoin(%q, %q)", test.root, test.unsafe) {
+			assert.Equalf(t, test.expected, got, "securejoin(%q, %q)", test.root, test.unsafe)
 		}
 	}
 }
 
 // Make sure that symlink loops result in errors.
 func TestSymlinkLoop(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestSymlinkLoop")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "subdir", "link"))
@@ -196,41 +163,29 @@ func TestSymlinkLoop(t *testing.T) {
 		{dir, "/../../../../../../../../../../../../../../../../self/.."},
 		{dir, "/self/././.."},
 	} {
-		got, err := SecureJoin(test.root, test.unsafe)
-		if !errors.Is(err, syscall.ELOOP) {
-			t.Errorf("securejoin(%q, %q): expected ELOOP, got %q & %v", test.root, test.unsafe, got, err)
-			continue
-		}
+		_, err := SecureJoin(test.root, test.unsafe)
+		assert.ErrorIsf(t, err, syscall.ELOOP, "securejoin(%q, %q)", test.root, test.unsafe)
 	}
 }
 
 // Make sure that ENOTDIR is correctly handled.
 func TestEnotdir(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestEnotdir")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 	ioutil.WriteFile(filepath.Join(dir, "notdir"), []byte("I am not a directory!"), 0755)
 	symlink(t, "/../../../notdir/somechild", filepath.Join(dir, "subdir", "link"))
 
-	for _, test := range []struct {
-		root, unsafe string
-	}{
-		{dir, "subdir/link"},
-		{dir, "notdir"},
-		{dir, "notdir/child"},
+	for _, test := range []input{
+		{dir, "subdir/link", filepath.Join(dir, "notdir/somechild")},
+		{dir, "notdir", filepath.Join(dir, "notdir")},
+		{dir, "notdir/child", filepath.Join(dir, "notdir/child")},
 	} {
-		_, err := SecureJoin(test.root, test.unsafe)
-		if err != nil {
-			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
-			continue
+		got, err := SecureJoin(test.root, test.unsafe)
+		if assert.NoErrorf(t, err, "securejoin(%q, %q)", test.root, test.unsafe) {
+			assert.Equalf(t, test.expected, got, "securejoin(%q, %q)", test.root, test.unsafe)
 		}
 	}
 }
@@ -253,9 +208,7 @@ func TestIsNotExist(t *testing.T) {
 		{errors.New("not a proper error"), false},
 	} {
 		got := IsNotExist(test.err)
-		if got != test.expected {
-			t.Errorf("IsNotExist(%#v): expected %v, got %v", test.err, test.expected, got)
-		}
+		assert.Equalf(t, test.expected, got, "IsNotExist(%#v)", test.err)
 	}
 }
 
@@ -269,15 +222,9 @@ func (m mockVFS) Readlink(path string) (string, error)   { return m.readlink(pat
 
 // Make sure that SecureJoinVFS actually does use the given VFS interface.
 func TestSecureJoinVFS(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestNonLexical")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
 
 	os.MkdirAll(filepath.Join(dir, "subdir"), 0755)
 	os.MkdirAll(filepath.Join(dir, "cousinparent", "cousin"), 0755)
@@ -303,16 +250,9 @@ func TestSecureJoinVFS(t *testing.T) {
 		}
 
 		got, err := SecureJoinVFS(test.root, test.unsafe, mock)
-		if err != nil {
-			t.Errorf("securejoin(%q, %q): unexpected error: %v", test.root, test.unsafe, err)
-			continue
-		}
-		if got != test.expected {
-			t.Errorf("securejoin(%q, %q): expected %q, got %q", test.root, test.unsafe, test.expected, got)
-			continue
-		}
-		if nLstat == 0 && nReadlink == 0 {
-			t.Errorf("securejoin(%q, %q): expected to use either lstat or readlink, neither were used", test.root, test.unsafe)
+		if assert.NoErrorf(t, err, "securejoin(%q, %q)", test.root, test.unsafe) {
+			assert.Equalf(t, test.expected, got, "securejoin(%q, %q)", test.root, test.unsafe)
+			assert.Truef(t, nLstat+nReadlink > 0, "securejoin(%q, %q): expected either lstat or readlink to be called", test.root, test.unsafe)
 		}
 	}
 }
@@ -321,20 +261,14 @@ func TestSecureJoinVFS(t *testing.T) {
 // that errors are correctly propagated.
 func TestSecureJoinVFSErrors(t *testing.T) {
 	var (
-		lstatErr    = errors.New("lstat error")
-		readlinkErr = errors.New("readlink err")
+		fakeErr     = errors.New("FAKE ERROR")
+		lstatErr    = fmt.Errorf("%w: lstat", fakeErr)
+		readlinkErr = fmt.Errorf("%w: readlink", fakeErr)
 	)
 
-	// Set up directory.
-	dir, err := ioutil.TempDir("", "TestSecureJoinVFSErrors")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir, err = filepath.EvalSymlinks(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(dir)
+	require.NoError(t, err)
 
 	// Make a link.
 	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "link"))
@@ -345,32 +279,32 @@ func TestSecureJoinVFSErrors(t *testing.T) {
 
 	// Make sure that the set of {lstat, readlink} failures do propagate.
 	for idx, test := range []struct {
-		vfs      VFS
-		expected []error
+		vfs       VFS
+		expectErr bool
 	}{
 		{
-			expected: []error{nil},
+			expectErr: false,
 			vfs: mockVFS{
 				lstat:    os.Lstat,
 				readlink: os.Readlink,
 			},
 		},
 		{
-			expected: []error{lstatErr},
+			expectErr: true,
 			vfs: mockVFS{
 				lstat:    lstatFailFn,
 				readlink: os.Readlink,
 			},
 		},
 		{
-			expected: []error{readlinkErr},
+			expectErr: true,
 			vfs: mockVFS{
 				lstat:    os.Lstat,
 				readlink: readlinkFailFn,
 			},
 		},
 		{
-			expected: []error{lstatErr, readlinkErr},
+			expectErr: true,
 			vfs: mockVFS{
 				lstat:    lstatFailFn,
 				readlink: readlinkFailFn,
@@ -378,15 +312,10 @@ func TestSecureJoinVFSErrors(t *testing.T) {
 		},
 	} {
 		_, err := SecureJoinVFS(dir, "link", test.vfs)
-
-		success := false
-		for _, exp := range test.expected {
-			if err == exp {
-				success = true
-			}
-		}
-		if !success {
-			t.Errorf("SecureJoinVFS.mock%d: expected to get lstatError, got %v", idx, err)
+		if test.expectErr {
+			assert.ErrorIsf(t, err, fakeErr, "SecureJoinVFS.mock%d", idx)
+		} else {
+			assert.NoErrorf(t, err, "SecureJoinVFS.mock%d", idx)
 		}
 	}
 }

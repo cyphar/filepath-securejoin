@@ -90,10 +90,16 @@ func openat2File(dir *os.File, path string, how *unix.OpenHow) (*os.File, error)
 // partialLookupOpenat2 is an alternative implementation of
 // partialLookupInRoot, using openat2(RESOLVE_IN_ROOT) to more safely get a
 // handle to the deepest existing child of the requested path within the root.
-func partialLookupOpenat2(root *os.File, unsafePath string) (*os.File, string, error) {
+func partialLookupOpenat2(root *os.File, unsafePath string, unsafeHallucinateDirectories bool) (*os.File, string, error) {
+	unsafePath = filepath.ToSlash(unsafePath) // noop
+
+	if !hasOpenat2() {
+		return nil, "", fmt.Errorf("openat2: %w", unix.ENOTSUP)
+	}
+
 	// TODO: Implement this as a git-bisect-like binary search.
 
-	unsafePath = filepath.ToSlash(unsafePath) // noop
+	var hallucinateDirectoryTries int
 	endIdx := len(unsafePath)
 	for endIdx > 0 {
 		subpath := unsafePath[:endIdx]
@@ -108,7 +114,25 @@ func partialLookupOpenat2(root *os.File, unsafePath string) (*os.File, string, e
 				endIdx += 1
 			}
 			// We found a subpath!
-			return handle, unsafePath[endIdx:], nil
+			remainingPath := unsafePath[endIdx:]
+			// If we were asked to "hallucinate" non-existent paths as though
+			// they are directories, take the remainingPath and clean it so
+			// that any ".." components that would lead us back to real paths
+			// can get resolved.
+			if remainingPath != "" && unsafeHallucinateDirectories {
+				if newRemainingPath := filepath.Clean(remainingPath); newRemainingPath != remainingPath {
+					hallucinateDirectoryTries++
+					if hallucinateDirectoryTries > maxUnsafeHallucinateDirectoryTries {
+						return nil, "", fmt.Errorf("%w: trying to reconcile non-existent subpath %q", errTooManyFakeDirectories, remainingPath)
+					}
+					// Start the lookup from the end again using the new
+					// remaining path.
+					unsafePath = subpath + "/" + newRemainingPath
+					endIdx = len(unsafePath)
+					continue
+				}
+			}
+			return handle, remainingPath, nil
 		}
 		if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) {
 			// That path doesn't exist, let's try the next directory up.

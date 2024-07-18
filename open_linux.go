@@ -16,7 +16,7 @@ import (
 // OpenatInRoot is equivalent to OpenInRoot, except that the root is provided
 // using an *os.File handle, to ensure that the correct root directory is used.
 func OpenatInRoot(root *os.File, unsafePath string) (*os.File, error) {
-	handle, remainingPath, err := partialLookupInRoot(root, unsafePath)
+	handle, remainingPath, err := partialLookupInRoot(root, unsafePath, false)
 	if err != nil {
 		return nil, err
 	}

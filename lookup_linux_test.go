@@ -19,7 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type partialLookupFunc func(root *os.File, unsafePath string) (*os.File, string, error)
+type partialLookupFunc func(root *os.File, unsafePath string, hallucinateDirectoryTries bool) (*os.File, string, error)
 
 type lookupResult struct {
 	handlePath, remainingPath string
@@ -28,7 +28,7 @@ type lookupResult struct {
 }
 
 func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir *os.File, unsafePath string, expected lookupResult) {
-	handle, remainingPath, err := partialLookupFn(rootDir, unsafePath)
+	handle, remainingPath, err := partialLookupFn(rootDir, unsafePath, false)
 	if handle != nil {
 		defer handle.Close()
 	}
@@ -325,7 +325,7 @@ func newRacingLookupMeta(pauseCh chan struct{}) *racingLookupMeta {
 func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, unsafePath string, skipErrs []error, allowedResults []lookupResult) {
 	// Similar to checkPartialLookup, but with extra logic for
 	// handling the lookup stopping partly through the lookup.
-	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath)
+	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath, false)
 	if err != nil {
 		for _, skipErr := range skipErrs {
 			if errors.Is(err, skipErr) {

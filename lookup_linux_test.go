@@ -153,55 +153,86 @@ func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {
 		// Complete lookups.
 		"complete-dir1": {"a", lookupResult{handlePath: "/a", remainingPath: "", fileType: unix.S_IFDIR}},
 		"complete-dir2": {"b/c/d/e/f", lookupResult{handlePath: "/b/c/d/e/f", remainingPath: "", fileType: unix.S_IFDIR}},
+		"complete-dir3": {"b///././c////.//d/./././///e////.//./f//././././", lookupResult{handlePath: "/b/c/d/e/f", remainingPath: "", fileType: unix.S_IFDIR}},
 		"complete-fifo": {"b/fifo", lookupResult{handlePath: "/b/fifo", remainingPath: "", fileType: unix.S_IFIFO}},
 		"complete-sock": {"b/sock", lookupResult{handlePath: "/b/sock", remainingPath: "", fileType: unix.S_IFSOCK}},
 		// Partial lookups.
 		"partial-dir-basic":  {"a/b/c/d/e/f/g/h", lookupResult{handlePath: "/a", remainingPath: "b/c/d/e/f/g/h", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"partial-dir-dotdot": {"a/foo/../bar/baz", lookupResult{handlePath: "/a", remainingPath: "foo/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		// Complete lookups of non-lexical symlinks.
-		"nonlexical-basic-complete":                 {"target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-basic-complete1":                {"target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-basic-complete2":                {"target/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-basic-complete3":                {"target//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-basic-partial":                  {"target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-basic-partial-dotdot":           {"target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level1-abs-complete":            {"link1/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-abs-complete1":           {"link1/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-abs-complete2":           {"link1/target_abs/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-abs-complete3":           {"link1/target_abs//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level1-abs-partial":             {"link1/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level1-abs-partial-dotdot":      {"link1/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level1-rel-complete":            {"link1/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-rel-complete1":           {"link1/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-rel-complete2":           {"link1/target_rel/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-rel-complete3":           {"link1/target_rel//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level1-rel-partial":             {"link1/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level1-rel-partial-dotdot":      {"link1/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level2-abs-abs-complete":        {"link2/link1_abs/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-abs-complete1":       {"link2/link1_abs/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-abs-complete2":       {"link2/link1_abs/target_abs/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-abs-complete3":       {"link2/link1_abs/target_abs//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level2-abs-abs-partial":         {"link2/link1_abs/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-abs-abs-partial-dotdot":  {"link2/link1_abs/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level2-abs-rel-complete":        {"link2/link1_abs/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-rel-complete1":       {"link2/link1_abs/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-rel-complete2":       {"link2/link1_abs/target_rel/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-rel-complete3":       {"link2/link1_abs/target_rel//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level2-abs-rel-partial":         {"link2/link1_abs/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-abs-rel-partial-dotdot":  {"link2/link1_abs/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level2-abs-open-complete":       {"link2/link1_abs/../target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-open-complete1":      {"link2/link1_abs/../target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-open-complete2":      {"link2/link1_abs/../target/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-open-complete3":      {"link2/link1_abs/../target//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level2-abs-open-partial":        {"link2/link1_abs/../target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-abs-open-partial-dotdot": {"link2/link1_abs/../target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level2-rel-abs-complete":        {"link2/link1_rel/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-abs-complete1":       {"link2/link1_rel/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-abs-complete2":       {"link2/link1_rel/target_abs/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-abs-complete3":       {"link2/link1_rel/target_abs//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level2-rel-abs-partial":         {"link2/link1_rel/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-rel-abs-partial-dotdot":  {"link2/link1_rel/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level2-rel-rel-complete":        {"link2/link1_rel/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-rel-complete1":       {"link2/link1_rel/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-rel-complete2":       {"link2/link1_rel/target_rel/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-rel-complete3":       {"link2/link1_rel/target_rel//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level2-rel-rel-partial":         {"link2/link1_rel/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-rel-rel-partial-dotdot":  {"link2/link1_rel/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level2-rel-open-complete":       {"link2/link1_rel/../target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-open-complete1":      {"link2/link1_rel/../target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-open-complete2":      {"link2/link1_rel/../target/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-open-complete3":      {"link2/link1_rel/../target//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level2-rel-open-partial":        {"link2/link1_rel/../target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-rel-open-partial-dotdot": {"link2/link1_rel/../target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level3-abs-complete":            {"link3/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-abs-complete1":           {"link3/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-abs-complete2":           {"link3/target_abs/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-abs-complete3":           {"link3/target_abs//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level3-abs-partial":             {"link3/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level3-abs-partial-dotdot":      {"link3/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
-		"nonlexical-level3-rel-complete":            {"link3/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-rel-complete1":           {"link3/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-rel-complete2":           {"link3/target_rel/", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-rel-complete3":           {"link3/target_rel//", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
 		"nonlexical-level3-rel-partial":             {"link3/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level3-rel-partial-dotdot":      {"link3/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		// Partial lookups due to hitting a non-directory.
+		"partial-nondir-slash1":          {"b/c/file/", lookupResult{handlePath: "/b/c/file", remainingPath: "", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-slash2":          {"b/c/file//", lookupResult{handlePath: "/b/c/file", remainingPath: "/", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
 		"partial-nondir-dot":             {"b/c/file/.", lookupResult{handlePath: "/b/c/file", remainingPath: ".", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
 		"partial-nondir-dotdot1":         {"b/c/file/..", lookupResult{handlePath: "/b/c/file", remainingPath: "..", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
 		"partial-nondir-dotdot2":         {"b/c/file/../foo/bar", lookupResult{handlePath: "/b/c/file", remainingPath: "../foo/bar", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-symlink-slash1":  {"b-file/", lookupResult{handlePath: "/b/c/file", remainingPath: "", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-symlink-slash2":  {"b-file//", lookupResult{handlePath: "/b/c/file", remainingPath: "/", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
 		"partial-nondir-symlink-dot":     {"b-file/.", lookupResult{handlePath: "/b/c/file", remainingPath: ".", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
 		"partial-nondir-symlink-dotdot1": {"b-file/..", lookupResult{handlePath: "/b/c/file", remainingPath: "..", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
 		"partial-nondir-symlink-dotdot2": {"b-file/../foo/bar", lookupResult{handlePath: "/b/c/file", remainingPath: "../foo/bar", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-fifo-slash1":            {"b/fifo/", lookupResult{handlePath: "/b/fifo", remainingPath: "", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
+		"partial-fifo-slash2":            {"b/fifo//", lookupResult{handlePath: "/b/fifo", remainingPath: "/", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
 		"partial-fifo-dot":               {"b/fifo/.", lookupResult{handlePath: "/b/fifo", remainingPath: ".", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
 		"partial-fifo-dotdot1":           {"b/fifo/..", lookupResult{handlePath: "/b/fifo", remainingPath: "..", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
 		"partial-fifo-dotdot2":           {"b/fifo/../foo/bar", lookupResult{handlePath: "/b/fifo", remainingPath: "../foo/bar", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
+		"partial-sock-slash1":            {"b/sock/", lookupResult{handlePath: "/b/sock", remainingPath: "", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
+		"partial-sock-slash2":            {"b/sock//", lookupResult{handlePath: "/b/sock", remainingPath: "/", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
 		"partial-sock-dot":               {"b/sock/.", lookupResult{handlePath: "/b/sock", remainingPath: ".", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
 		"partial-sock-dotdot1":           {"b/sock/..", lookupResult{handlePath: "/b/sock", remainingPath: "..", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
 		"partial-sock-dotdot2":           {"b/sock/../foo/bar", lookupResult{handlePath: "/b/sock", remainingPath: "../foo/bar", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
@@ -747,7 +778,7 @@ func TestSymlinkStackTailChain(t *testing.T) {
 	defer ss.Close()
 
 	// Basic expected contents.
-	testStackContents(t, "initial state", ss,
+	initialState := []expectedStackEntry{
 		// Top entry is not a tail-chain.
 		expectedStackEntry{"A", []string{"subdir1"}},
 		// The first tail-chain should have no unwalked links.
@@ -764,31 +795,22 @@ func TestSymlinkStackTailChain(t *testing.T) {
 		expectedStackEntry{"J", nil},
 		// Final entry in the second tail-chain.
 		expectedStackEntry{"K", []string{"taillink2", ".."}},
-	)
+	}
+
+	testStackContents(t, "initial state", ss, initialState...)
+
+	// Trying to pop "." does nothing.
+	for i := 0; i < 20; i++ {
+		require.NoError(t, ss.PopPart("."), `popping "." should never fail`)
+		// NOTE: Same contents as above.
+		testStackContents(t, "noop pop .", ss, initialState...)
+	}
 
 	// Popping any of the early tail chain entries must fail.
-	for _, badPart := range []string{"subdir1", "subdir2", "..", "."} {
+	for _, badPart := range []string{"subdir1", "subdir2", ".."} {
 		require.ErrorIsf(t, ss.PopPart(badPart), errBrokenSymlinkStack, "bad pop %q", badPart)
-
 		// NOTE: Same contents as above.
-		testStackContents(t, "bad pop "+badPart, ss,
-			// Top entry is not a tail-chain.
-			expectedStackEntry{"A", []string{"subdir1"}},
-			// The first tail-chain should have no unwalked links.
-			expectedStackEntry{"B", nil},
-			expectedStackEntry{"C", nil},
-			expectedStackEntry{"D", nil},
-			// Final entry in the first tail-chain.
-			expectedStackEntry{"E", []string{"subdir2"}},
-			// The second tail-chain should have no unwalked links.
-			expectedStackEntry{"F", nil},
-			expectedStackEntry{"G", nil},
-			expectedStackEntry{"H", nil},
-			expectedStackEntry{"I", nil},
-			expectedStackEntry{"J", nil},
-			// Final entry in the second tail-chain.
-			expectedStackEntry{"K", []string{"taillink2", ".."}},
-		)
+		testStackContents(t, "bad pop "+badPart, ss, initialState...)
 	}
 
 	// Dropping the second-last entry should keep the tail-chain.

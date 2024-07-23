@@ -157,7 +157,7 @@ func (s *symlinkStack) PopTopSymlink() (*os.File, string, bool) {
 // within the provided root (a-la RESOLVE_IN_ROOT) and opens the final existing
 // component of the requested path, returning a file handle to the final
 // existing component and a string containing the remaining path components.
-func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string, Err error) {
+func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ string, _ error) {
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 
 	// This is very similar to SecureJoin, except that we operate on the
@@ -183,7 +183,8 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 		return nil, "", fmt.Errorf("clone root fd: %w", err)
 	}
 	defer func() {
-		if Err != nil {
+		// If a handle is not returned, close the internal handle.
+		if Handle == nil {
 			_ = currentDir.Close()
 		}
 	}()
@@ -258,35 +259,6 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 			}
 
 			switch st.Mode() & os.ModeType {
-			case os.ModeDir:
-				// If we are dealing with a directory, simply walk into it.
-				_ = currentDir.Close()
-				currentDir = nextDir
-				currentPath = nextPath
-
-				// The part was real, so drop it from the symlink stack.
-				if err := symlinkStack.PopPart(part); err != nil {
-					return nil, "", fmt.Errorf("walking into directory %q failed: %w", part, err)
-				}
-
-				// If we are operating on a .., make sure we haven't escaped.
-				// We only have to check for ".." here because walking down
-				// into a regular component component cannot cause you to
-				// escape. This mirrors the logic in RESOLVE_IN_ROOT, except we
-				// have to check every ".." rather than only checking after a
-				// rename or mount on the system.
-				if part == ".." {
-					// Make sure the root hasn't moved.
-					if err := checkProcSelfFdPath(logicalRootPath, root); err != nil {
-						return nil, "", fmt.Errorf("root path moved during lookup: %w", err)
-					}
-					// Make sure the path is what we expect.
-					fullPath := logicalRootPath + nextPath
-					if err := checkProcSelfFdPath(fullPath, currentDir); err != nil {
-						return nil, "", fmt.Errorf("walking into %q had unexpected result: %w", part, err)
-					}
-				}
-
 			case os.ModeSymlink:
 				// readlinkat implies AT_EMPTY_PATH.
 				linkDest, err := readlinkatFile(nextDir, "")
@@ -319,48 +291,50 @@ func partialLookupInRoot(root *os.File, unsafePath string) (_ *os.File, _ string
 					currentDir = rootClone
 					currentPath = "/"
 				}
+
 			default:
-				// For any other file type, we can't walk further and so we've
-				// hit the end of the lookup. The handling is very similar to
-				// ENOENT from openat(2), except that we return a handle to the
-				// component we just walked into (and we drop the component
-				// from the symlink stack).
+				// If we are dealing with a directory, simply walk into it.
 				_ = currentDir.Close()
+				currentDir = nextDir
+				currentPath = nextPath
 
-				// The part existed, so drop it from the symlink stack.
+				// The part was real, so drop it from the symlink stack.
 				if err := symlinkStack.PopPart(part); err != nil {
-					return nil, "", fmt.Errorf("walking into non-directory %q failed: %w", part, err)
+					return nil, "", fmt.Errorf("walking into directory %q failed: %w", part, err)
 				}
 
-				// If there are any remaining components in the symlink stack,
-				// we are still within a symlink resolution and thus we hit a
-				// dangling symlink. So pretend that the first symlink in the
-				// stack we hit was an ENOENT (to match openat2).
-				if oldDir, remainingPath, ok := symlinkStack.PopTopSymlink(); ok {
-					_ = nextDir.Close()
-					return oldDir, remainingPath, nil
+				// If we are operating on a .., make sure we haven't escaped.
+				// We only have to check for ".." here because walking down
+				// into a regular component component cannot cause you to
+				// escape. This mirrors the logic in RESOLVE_IN_ROOT, except we
+				// have to check every ".." rather than only checking after a
+				// rename or mount on the system.
+				if part == ".." {
+					// Make sure the root hasn't moved.
+					if err := checkProcSelfFdPath(logicalRootPath, root); err != nil {
+						return nil, "", fmt.Errorf("root path moved during lookup: %w", err)
+					}
+					// Make sure the path is what we expect.
+					fullPath := logicalRootPath + nextPath
+					if err := checkProcSelfFdPath(fullPath, currentDir); err != nil {
+						return nil, "", fmt.Errorf("walking into %q had unexpected result: %w", part, err)
+					}
 				}
-
-				// The current component exists, so return it.
-				return nextDir, remainingPath, nil
 			}
 
-		case errors.Is(err, os.ErrNotExist):
+		default:
 			// If there are any remaining components in the symlink stack, we
 			// are still within a symlink resolution and thus we hit a dangling
 			// symlink. So pretend that the first symlink in the stack we hit
 			// was an ENOENT (to match openat2).
 			if oldDir, remainingPath, ok := symlinkStack.PopTopSymlink(); ok {
 				_ = currentDir.Close()
-				return oldDir, remainingPath, nil
+				return oldDir, remainingPath, err
 			}
 			// We have hit a final component that doesn't exist, so we have our
 			// partial open result. Note that we have to use the OLD remaining
 			// path, since the lookup failed.
-			return currentDir, oldRemainingPath, nil
-
-		default:
-			return nil, "", err
+			return currentDir, oldRemainingPath, err
 		}
 	}
 	// All of the components existed!

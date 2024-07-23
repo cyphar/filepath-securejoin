@@ -95,6 +95,7 @@ func partialLookupOpenat2(root *os.File, unsafePath string) (*os.File, string, e
 
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 	endIdx := len(unsafePath)
+	var lastError error
 	for endIdx > 0 {
 		subpath := unsafePath[:endIdx]
 
@@ -108,11 +109,12 @@ func partialLookupOpenat2(root *os.File, unsafePath string) (*os.File, string, e
 				endIdx += 1
 			}
 			// We found a subpath!
-			return handle, unsafePath[endIdx:], nil
+			return handle, unsafePath[endIdx:], lastError
 		}
 		if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOTDIR) {
 			// That path doesn't exist, let's try the next directory up.
 			endIdx = strings.LastIndexByte(subpath, '/')
+			lastError = err
 			continue
 		}
 		return nil, "", fmt.Errorf("open subpath: %w", err)
@@ -124,5 +126,5 @@ func partialLookupOpenat2(root *os.File, unsafePath string) (*os.File, string, e
 	if err != nil {
 		return nil, "", err
 	}
-	return rootClone, unsafePath, nil
+	return rootClone, unsafePath, lastError
 }

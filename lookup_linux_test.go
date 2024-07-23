@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,12 +36,20 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 	if expected.err != nil {
 		if assert.Error(t, err) {
 			assert.ErrorIs(t, err, expected.err)
-		} else {
-			t.Errorf("unexpected handle %q", handle.Name())
 		}
-		return
+		if expected.handlePath == "" {
+			if handle != nil {
+				t.Errorf("unexpected handle %q", handle.Name())
+			}
+			return
+		}
+	} else {
+		if expected.remainingPath != "" {
+			t.Errorf("we expect a remaining path, but no error? %q", expected.remainingPath)
+		}
+		assert.NoError(t, err)
 	}
-	assert.NoError(t, err)
+	assert.NotNil(t, handle, "expected to get a handle")
 
 	// Check the remainingPath.
 	assert.Equal(t, expected.remainingPath, remainingPath, "remaining path")
@@ -147,94 +156,94 @@ func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {
 		"complete-fifo": {"b/fifo", lookupResult{handlePath: "/b/fifo", remainingPath: "", fileType: unix.S_IFIFO}},
 		"complete-sock": {"b/sock", lookupResult{handlePath: "/b/sock", remainingPath: "", fileType: unix.S_IFSOCK}},
 		// Partial lookups.
-		"partial-dir-basic":  {"a/b/c/d/e/f/g/h", lookupResult{handlePath: "/a", remainingPath: "b/c/d/e/f/g/h", fileType: unix.S_IFDIR}},
-		"partial-dir-dotdot": {"a/foo/../bar/baz", lookupResult{handlePath: "/a", remainingPath: "foo/../bar/baz", fileType: unix.S_IFDIR}},
+		"partial-dir-basic":  {"a/b/c/d/e/f/g/h", lookupResult{handlePath: "/a", remainingPath: "b/c/d/e/f/g/h", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"partial-dir-dotdot": {"a/foo/../bar/baz", lookupResult{handlePath: "/a", remainingPath: "foo/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		// Complete lookups of non-lexical symlinks.
 		"nonlexical-basic-complete":                 {"target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-basic-partial":                  {"target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-basic-partial-dotdot":           {"target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-basic-partial":                  {"target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-basic-partial-dotdot":           {"target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level1-abs-complete":            {"link1/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level1-abs-partial":             {"link1/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level1-abs-partial-dotdot":      {"link1/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-abs-partial":             {"link1/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level1-abs-partial-dotdot":      {"link1/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level1-rel-complete":            {"link1/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level1-rel-partial":             {"link1/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level1-rel-partial-dotdot":      {"link1/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level1-rel-partial":             {"link1/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level1-rel-partial-dotdot":      {"link1/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-abs-abs-complete":        {"link2/link1_abs/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-abs-abs-partial":         {"link2/link1_abs/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-abs-abs-partial-dotdot":  {"link2/link1_abs/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-abs-partial":         {"link2/link1_abs/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level2-abs-abs-partial-dotdot":  {"link2/link1_abs/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-abs-rel-complete":        {"link2/link1_abs/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-abs-rel-partial":         {"link2/link1_abs/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-abs-rel-partial-dotdot":  {"link2/link1_abs/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-rel-partial":         {"link2/link1_abs/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level2-abs-rel-partial-dotdot":  {"link2/link1_abs/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-abs-open-complete":       {"link2/link1_abs/../target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-abs-open-partial":        {"link2/link1_abs/../target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-abs-open-partial-dotdot": {"link2/link1_abs/../target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-abs-open-partial":        {"link2/link1_abs/../target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level2-abs-open-partial-dotdot": {"link2/link1_abs/../target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-rel-abs-complete":        {"link2/link1_rel/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-rel-abs-partial":         {"link2/link1_rel/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-rel-abs-partial-dotdot":  {"link2/link1_rel/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-abs-partial":         {"link2/link1_rel/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level2-rel-abs-partial-dotdot":  {"link2/link1_rel/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-rel-rel-complete":        {"link2/link1_rel/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-rel-rel-partial":         {"link2/link1_rel/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-rel-rel-partial-dotdot":  {"link2/link1_rel/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-rel-partial":         {"link2/link1_rel/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level2-rel-rel-partial-dotdot":  {"link2/link1_rel/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level2-rel-open-complete":       {"link2/link1_rel/../target", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-rel-open-partial":        {"link2/link1_rel/../target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level2-rel-open-partial-dotdot": {"link2/link1_rel/../target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level2-rel-open-partial":        {"link2/link1_rel/../target/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level2-rel-open-partial-dotdot": {"link2/link1_rel/../target/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level3-abs-complete":            {"link3/target_abs", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level3-abs-partial":             {"link3/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level3-abs-partial-dotdot":      {"link3/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-abs-partial":             {"link3/target_abs/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level3-abs-partial-dotdot":      {"link3/target_abs/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		"nonlexical-level3-rel-complete":            {"link3/target_rel", lookupResult{handlePath: "/target", remainingPath: "", fileType: unix.S_IFDIR}},
-		"nonlexical-level3-rel-partial":             {"link3/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR}},
-		"nonlexical-level3-rel-partial-dotdot":      {"link3/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR}},
+		"nonlexical-level3-rel-partial":             {"link3/target_rel/foo", lookupResult{handlePath: "/target", remainingPath: "foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"nonlexical-level3-rel-partial-dotdot":      {"link3/target_rel/../target/foo/bar/../baz", lookupResult{handlePath: "/target", remainingPath: "foo/bar/../baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		// Partial lookups due to hitting a non-directory.
-		"partial-nondir-dot":             {"b/c/file/.", lookupResult{handlePath: "/b/c/file", remainingPath: ".", fileType: unix.S_IFREG}},
-		"partial-nondir-dotdot1":         {"b/c/file/..", lookupResult{handlePath: "/b/c/file", remainingPath: "..", fileType: unix.S_IFREG}},
-		"partial-nondir-dotdot2":         {"b/c/file/../foo/bar", lookupResult{handlePath: "/b/c/file", remainingPath: "../foo/bar", fileType: unix.S_IFREG}},
-		"partial-nondir-symlink-dot":     {"b-file/.", lookupResult{handlePath: "/b/c/file", remainingPath: ".", fileType: unix.S_IFREG}},
-		"partial-nondir-symlink-dotdot1": {"b-file/..", lookupResult{handlePath: "/b/c/file", remainingPath: "..", fileType: unix.S_IFREG}},
-		"partial-nondir-symlink-dotdot2": {"b-file/../foo/bar", lookupResult{handlePath: "/b/c/file", remainingPath: "../foo/bar", fileType: unix.S_IFREG}},
-		"partial-fifo-dot":               {"b/fifo/.", lookupResult{handlePath: "/b/fifo", remainingPath: ".", fileType: unix.S_IFIFO}},
-		"partial-fifo-dotdot1":           {"b/fifo/..", lookupResult{handlePath: "/b/fifo", remainingPath: "..", fileType: unix.S_IFIFO}},
-		"partial-fifo-dotdot2":           {"b/fifo/../foo/bar", lookupResult{handlePath: "/b/fifo", remainingPath: "../foo/bar", fileType: unix.S_IFIFO}},
-		"partial-sock-dot":               {"b/sock/.", lookupResult{handlePath: "/b/sock", remainingPath: ".", fileType: unix.S_IFSOCK}},
-		"partial-sock-dotdot1":           {"b/sock/..", lookupResult{handlePath: "/b/sock", remainingPath: "..", fileType: unix.S_IFSOCK}},
-		"partial-sock-dotdot2":           {"b/sock/../foo/bar", lookupResult{handlePath: "/b/sock", remainingPath: "../foo/bar", fileType: unix.S_IFSOCK}},
+		"partial-nondir-dot":             {"b/c/file/.", lookupResult{handlePath: "/b/c/file", remainingPath: ".", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-dotdot1":         {"b/c/file/..", lookupResult{handlePath: "/b/c/file", remainingPath: "..", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-dotdot2":         {"b/c/file/../foo/bar", lookupResult{handlePath: "/b/c/file", remainingPath: "../foo/bar", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-symlink-dot":     {"b-file/.", lookupResult{handlePath: "/b/c/file", remainingPath: ".", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-symlink-dotdot1": {"b-file/..", lookupResult{handlePath: "/b/c/file", remainingPath: "..", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-nondir-symlink-dotdot2": {"b-file/../foo/bar", lookupResult{handlePath: "/b/c/file", remainingPath: "../foo/bar", fileType: unix.S_IFREG, err: unix.ENOTDIR}},
+		"partial-fifo-dot":               {"b/fifo/.", lookupResult{handlePath: "/b/fifo", remainingPath: ".", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
+		"partial-fifo-dotdot1":           {"b/fifo/..", lookupResult{handlePath: "/b/fifo", remainingPath: "..", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
+		"partial-fifo-dotdot2":           {"b/fifo/../foo/bar", lookupResult{handlePath: "/b/fifo", remainingPath: "../foo/bar", fileType: unix.S_IFIFO, err: unix.ENOTDIR}},
+		"partial-sock-dot":               {"b/sock/.", lookupResult{handlePath: "/b/sock", remainingPath: ".", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
+		"partial-sock-dotdot1":           {"b/sock/..", lookupResult{handlePath: "/b/sock", remainingPath: "..", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
+		"partial-sock-dotdot2":           {"b/sock/../foo/bar", lookupResult{handlePath: "/b/sock", remainingPath: "../foo/bar", fileType: unix.S_IFSOCK, err: unix.ENOTDIR}},
 		// Dangling symlinks are treated as though they are non-existent.
-		"dangling1-inroot-trailing":       {"a-fake1", lookupResult{handlePath: "/", remainingPath: "a-fake1", fileType: unix.S_IFDIR}},
-		"dangling1-inroot-partial":        {"a-fake1/foo", lookupResult{handlePath: "/", remainingPath: "a-fake1/foo", fileType: unix.S_IFDIR}},
-		"dangling1-inroot-partial-dotdot": {"a-fake1/../bar/baz", lookupResult{handlePath: "/", remainingPath: "a-fake1/../bar/baz", fileType: unix.S_IFDIR}},
-		"dangling1-sub-trailing":          {"c/a-fake1", lookupResult{handlePath: "/c", remainingPath: "a-fake1", fileType: unix.S_IFDIR}},
-		"dangling1-sub-partial":           {"c/a-fake1/foo", lookupResult{handlePath: "/c", remainingPath: "a-fake1/foo", fileType: unix.S_IFDIR}},
-		"dangling1-sub-partial-dotdot":    {"c/a-fake1/../bar/baz", lookupResult{handlePath: "/c", remainingPath: "a-fake1/../bar/baz", fileType: unix.S_IFDIR}},
-		"dangling2-inroot-trailing":       {"a-fake2", lookupResult{handlePath: "/", remainingPath: "a-fake2", fileType: unix.S_IFDIR}},
-		"dangling2-inroot-partial":        {"a-fake2/foo", lookupResult{handlePath: "/", remainingPath: "a-fake2/foo", fileType: unix.S_IFDIR}},
-		"dangling2-inroot-partial-dotdot": {"a-fake2/../bar/baz", lookupResult{handlePath: "/", remainingPath: "a-fake2/../bar/baz", fileType: unix.S_IFDIR}},
-		"dangling2-sub-trailing":          {"c/a-fake2", lookupResult{handlePath: "/c", remainingPath: "a-fake2", fileType: unix.S_IFDIR}},
-		"dangling2-sub-partial":           {"c/a-fake2/foo", lookupResult{handlePath: "/c", remainingPath: "a-fake2/foo", fileType: unix.S_IFDIR}},
-		"dangling2-sub-partial-dotdot":    {"c/a-fake2/../bar/baz", lookupResult{handlePath: "/c", remainingPath: "a-fake2/../bar/baz", fileType: unix.S_IFDIR}},
-		"dangling3-inroot-trailing":       {"a-fake3", lookupResult{handlePath: "/", remainingPath: "a-fake3", fileType: unix.S_IFDIR}},
-		"dangling3-inroot-partial":        {"a-fake3/foo", lookupResult{handlePath: "/", remainingPath: "a-fake3/foo", fileType: unix.S_IFDIR}},
-		"dangling3-inroot-partial-dotdot": {"a-fake3/../bar/baz", lookupResult{handlePath: "/", remainingPath: "a-fake3/../bar/baz", fileType: unix.S_IFDIR}},
-		"dangling3-sub-trailing":          {"c/a-fake3", lookupResult{handlePath: "/c", remainingPath: "a-fake3", fileType: unix.S_IFDIR}},
-		"dangling3-sub-partial":           {"c/a-fake3/foo", lookupResult{handlePath: "/c", remainingPath: "a-fake3/foo", fileType: unix.S_IFDIR}},
-		"dangling3-sub-partial-dotdot":    {"c/a-fake3/../bar/baz", lookupResult{handlePath: "/c", remainingPath: "a-fake3/../bar/baz", fileType: unix.S_IFDIR}},
+		"dangling1-inroot-trailing":       {"a-fake1", lookupResult{handlePath: "/", remainingPath: "a-fake1", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling1-inroot-partial":        {"a-fake1/foo", lookupResult{handlePath: "/", remainingPath: "a-fake1/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling1-inroot-partial-dotdot": {"a-fake1/../bar/baz", lookupResult{handlePath: "/", remainingPath: "a-fake1/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling1-sub-trailing":          {"c/a-fake1", lookupResult{handlePath: "/c", remainingPath: "a-fake1", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling1-sub-partial":           {"c/a-fake1/foo", lookupResult{handlePath: "/c", remainingPath: "a-fake1/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling1-sub-partial-dotdot":    {"c/a-fake1/../bar/baz", lookupResult{handlePath: "/c", remainingPath: "a-fake1/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling2-inroot-trailing":       {"a-fake2", lookupResult{handlePath: "/", remainingPath: "a-fake2", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling2-inroot-partial":        {"a-fake2/foo", lookupResult{handlePath: "/", remainingPath: "a-fake2/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling2-inroot-partial-dotdot": {"a-fake2/../bar/baz", lookupResult{handlePath: "/", remainingPath: "a-fake2/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling2-sub-trailing":          {"c/a-fake2", lookupResult{handlePath: "/c", remainingPath: "a-fake2", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling2-sub-partial":           {"c/a-fake2/foo", lookupResult{handlePath: "/c", remainingPath: "a-fake2/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling2-sub-partial-dotdot":    {"c/a-fake2/../bar/baz", lookupResult{handlePath: "/c", remainingPath: "a-fake2/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling3-inroot-trailing":       {"a-fake3", lookupResult{handlePath: "/", remainingPath: "a-fake3", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling3-inroot-partial":        {"a-fake3/foo", lookupResult{handlePath: "/", remainingPath: "a-fake3/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling3-inroot-partial-dotdot": {"a-fake3/../bar/baz", lookupResult{handlePath: "/", remainingPath: "a-fake3/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling3-sub-trailing":          {"c/a-fake3", lookupResult{handlePath: "/c", remainingPath: "a-fake3", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling3-sub-partial":           {"c/a-fake3/foo", lookupResult{handlePath: "/c", remainingPath: "a-fake3/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling3-sub-partial-dotdot":    {"c/a-fake3/../bar/baz", lookupResult{handlePath: "/c", remainingPath: "a-fake3/../bar/baz", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		// Tricky dangling symlinks.
-		"dangling-tricky1-trailing":       {"link3/deep_dangling1", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling1", fileType: unix.S_IFDIR}},
-		"dangling-tricky1-partial":        {"link3/deep_dangling1/foo", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling1/foo", fileType: unix.S_IFDIR}},
-		"dangling-tricky1-partial-dotdot": {"link3/deep_dangling1/..", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling1/..", fileType: unix.S_IFDIR}},
-		"dangling-tricky2-trailing":       {"link3/deep_dangling2", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling2", fileType: unix.S_IFDIR}},
-		"dangling-tricky2-partial":        {"link3/deep_dangling2/foo", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling2/foo", fileType: unix.S_IFDIR}},
-		"dangling-tricky2-partial-dotdot": {"link3/deep_dangling2/..", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling2/..", fileType: unix.S_IFDIR}},
+		"dangling-tricky1-trailing":       {"link3/deep_dangling1", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling1", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling-tricky1-partial":        {"link3/deep_dangling1/foo", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling1/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling-tricky1-partial-dotdot": {"link3/deep_dangling1/..", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling1/..", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling-tricky2-trailing":       {"link3/deep_dangling2", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling2", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling-tricky2-partial":        {"link3/deep_dangling2/foo", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling2/foo", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"dangling-tricky2-partial-dotdot": {"link3/deep_dangling2/..", lookupResult{handlePath: "/link3", remainingPath: "deep_dangling2/..", fileType: unix.S_IFDIR, err: unix.ENOENT}},
 		// Really deep dangling links.
-		"deep-dangling1":           {"dangling/a", lookupResult{handlePath: "/dangling", remainingPath: "a", fileType: unix.S_IFDIR}},
-		"deep-dangling2":           {"dangling/b/c", lookupResult{handlePath: "/dangling/b", remainingPath: "c", fileType: unix.S_IFDIR}},
-		"deep-dangling3":           {"dangling/c", lookupResult{handlePath: "/dangling", remainingPath: "c", fileType: unix.S_IFDIR}},
-		"deep-dangling4":           {"dangling/d/e", lookupResult{handlePath: "/dangling/d", remainingPath: "e", fileType: unix.S_IFDIR}},
-		"deep-dangling5":           {"dangling/e", lookupResult{handlePath: "/dangling", remainingPath: "e", fileType: unix.S_IFDIR}},
-		"deep-dangling6":           {"dangling/g", lookupResult{handlePath: "/dangling", remainingPath: "g", fileType: unix.S_IFDIR}},
-		"deep-dangling-fileasdir1": {"dangling-file/a", lookupResult{handlePath: "/dangling-file", remainingPath: "a", fileType: unix.S_IFDIR}},
-		"deep-dangling-fileasdir2": {"dangling-file/b/c", lookupResult{handlePath: "/dangling-file/b", remainingPath: "c", fileType: unix.S_IFDIR}},
-		"deep-dangling-fileasdir3": {"dangling-file/c", lookupResult{handlePath: "/dangling-file", remainingPath: "c", fileType: unix.S_IFDIR}},
-		"deep-dangling-fileasdir4": {"dangling-file/d/e", lookupResult{handlePath: "/dangling-file/d", remainingPath: "e", fileType: unix.S_IFDIR}},
-		"deep-dangling-fileasdir5": {"dangling-file/e", lookupResult{handlePath: "/dangling-file", remainingPath: "e", fileType: unix.S_IFDIR}},
-		"deep-dangling-fileasdir6": {"dangling-file/g", lookupResult{handlePath: "/dangling-file", remainingPath: "g", fileType: unix.S_IFDIR}},
+		"deep-dangling1":           {"dangling/a", lookupResult{handlePath: "/dangling", remainingPath: "a", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"deep-dangling2":           {"dangling/b/c", lookupResult{handlePath: "/dangling/b", remainingPath: "c", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"deep-dangling3":           {"dangling/c", lookupResult{handlePath: "/dangling", remainingPath: "c", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"deep-dangling4":           {"dangling/d/e", lookupResult{handlePath: "/dangling/d", remainingPath: "e", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"deep-dangling5":           {"dangling/e", lookupResult{handlePath: "/dangling", remainingPath: "e", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"deep-dangling6":           {"dangling/g", lookupResult{handlePath: "/dangling", remainingPath: "g", fileType: unix.S_IFDIR, err: unix.ENOENT}},
+		"deep-dangling-fileasdir1": {"dangling-file/a", lookupResult{handlePath: "/dangling-file", remainingPath: "a", fileType: unix.S_IFDIR, err: unix.ENOTDIR}},
+		"deep-dangling-fileasdir2": {"dangling-file/b/c", lookupResult{handlePath: "/dangling-file/b", remainingPath: "c", fileType: unix.S_IFDIR, err: unix.ENOTDIR}},
+		"deep-dangling-fileasdir3": {"dangling-file/c", lookupResult{handlePath: "/dangling-file", remainingPath: "c", fileType: unix.S_IFDIR, err: unix.ENOTDIR}},
+		"deep-dangling-fileasdir4": {"dangling-file/d/e", lookupResult{handlePath: "/dangling-file/d", remainingPath: "e", fileType: unix.S_IFDIR, err: unix.ENOTDIR}},
+		"deep-dangling-fileasdir5": {"dangling-file/e", lookupResult{handlePath: "/dangling-file", remainingPath: "e", fileType: unix.S_IFDIR, err: unix.ENOTDIR}},
+		"deep-dangling-fileasdir6": {"dangling-file/g", lookupResult{handlePath: "/dangling-file", remainingPath: "g", fileType: unix.S_IFDIR, err: unix.ENOTDIR}},
 		// Symlink loops.
 		"loop":        {"loop/link", lookupResult{err: unix.ELOOP}},
 		"loop-basic1": {"loop/basic-loop1", lookupResult{err: unix.ELOOP}},
@@ -289,12 +298,12 @@ func TestPartialLookupInRoot_BadInode(t *testing.T) {
 			"char-trailing": {"foo/whiteout", lookupResult{handlePath: "/foo/whiteout", remainingPath: "", fileType: unix.S_IFCHR}},
 			"blk-trailing":  {"foo/whiteout-blk", lookupResult{handlePath: "/foo/whiteout-blk", remainingPath: "", fileType: unix.S_IFBLK}},
 			// Partial lookups due to hitting a non-directory.
-			"char-dot":     {"foo/whiteout/.", lookupResult{handlePath: "/foo/whiteout", remainingPath: ".", fileType: unix.S_IFCHR}},
-			"char-dotdot1": {"foo/whiteout/..", lookupResult{handlePath: "/foo/whiteout", remainingPath: "..", fileType: unix.S_IFCHR}},
-			"char-dotdot2": {"foo/whiteout/../foo/bar", lookupResult{handlePath: "/foo/whiteout", remainingPath: "../foo/bar", fileType: unix.S_IFCHR}},
-			"blk-dot":      {"foo/whiteout-blk/.", lookupResult{handlePath: "/foo/whiteout-blk", remainingPath: ".", fileType: unix.S_IFBLK}},
-			"blk-dotdot1":  {"foo/whiteout-blk/..", lookupResult{handlePath: "/foo/whiteout-blk", remainingPath: "..", fileType: unix.S_IFBLK}},
-			"blk-dotdot2":  {"foo/whiteout-blk/../foo/bar", lookupResult{handlePath: "/foo/whiteout-blk", remainingPath: "../foo/bar", fileType: unix.S_IFBLK}},
+			"char-dot":     {"foo/whiteout/.", lookupResult{handlePath: "/foo/whiteout", remainingPath: ".", fileType: unix.S_IFCHR, err: unix.ENOTDIR}},
+			"char-dotdot1": {"foo/whiteout/..", lookupResult{handlePath: "/foo/whiteout", remainingPath: "..", fileType: unix.S_IFCHR, err: unix.ENOTDIR}},
+			"char-dotdot2": {"foo/whiteout/../foo/bar", lookupResult{handlePath: "/foo/whiteout", remainingPath: "../foo/bar", fileType: unix.S_IFCHR, err: unix.ENOTDIR}},
+			"blk-dot":      {"foo/whiteout-blk/.", lookupResult{handlePath: "/foo/whiteout-blk", remainingPath: ".", fileType: unix.S_IFBLK, err: unix.ENOTDIR}},
+			"blk-dotdot1":  {"foo/whiteout-blk/..", lookupResult{handlePath: "/foo/whiteout-blk", remainingPath: "..", fileType: unix.S_IFBLK, err: unix.ENOTDIR}},
+			"blk-dotdot2":  {"foo/whiteout-blk/../foo/bar", lookupResult{handlePath: "/foo/whiteout-blk", remainingPath: "../foo/bar", fileType: unix.S_IFBLK, err: unix.ENOTDIR}},
 		} {
 			test := test // copy iterator
 			// Update the handlePath to be inside our root.
@@ -326,27 +335,6 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 	// Similar to checkPartialLookup, but with extra logic for
 	// handling the lookup stopping partly through the lookup.
 	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath)
-	if err != nil {
-		for _, skipErr := range skipErrs {
-			if errors.Is(err, skipErr) {
-				m.skipErrCounts[skipErr]++
-				m.skipCount++
-				return
-			}
-		}
-		for _, allowed := range allowedResults {
-			if allowed.err != nil && errors.Is(err, allowed.err) {
-				m.passErrCount++
-				return
-			}
-		}
-		// If we didn't hit any of the allowed errors, it's an
-		// unexpected error.
-		assert.NoError(t, err)
-		m.badErrCount++
-		return
-	}
-
 	var (
 		handleName string
 		realPath   string
@@ -365,6 +353,25 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 		require.NoError(t, err, "stat handle")
 
 		_ = handle.Close()
+	} else if err != nil {
+		for _, skipErr := range skipErrs {
+			if errors.Is(err, skipErr) {
+				m.skipErrCounts[skipErr]++
+				m.skipCount++
+				return
+			}
+		}
+		for _, allowed := range allowedResults {
+			if allowed.err != nil && errors.Is(err, allowed.err) {
+				m.passErrCount++
+				return
+			}
+		}
+		// If we didn't hit any of the allowed errors, it's an
+		// unexpected error.
+		assert.NoError(t, err)
+		m.badErrCount++
+		return
 	}
 
 	if realPath != handleName {
@@ -458,8 +465,9 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			"swap-dir-danglinglink-basic":  {"a/b", "bad-link", "a/b/c/d/e", []error{unix.ENOENT}, slices.Clone(defaultExpected)},
 			"swap-dir-danglinglink-dotdot": {"a/b", "bad-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", []error{unix.ENOENT}, slices.Clone(defaultExpected)},
 			// Swap the root.
-			"swap-root-basic":  {".", "../outsideroot", "a/b/c/d/e", nil, slices.Clone(defaultExpected)},
-			"swap-root-dotdot": {".", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-root-basic":        {".", "../outsideroot", "a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-root-dotdot":       {".", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-root-dotdot-extra": {".", "../outsideroot", "a/" + strings.Repeat("b/c/d/../../../", 10) + "b/c/d/e", nil, slices.Clone(defaultExpected)},
 			// Swap one of our walking paths outside the root.
 			"swap-dir-outsideroot-basic": {"a/b", "../outsideroot", "a/b/c/d/e", nil, append(
 				// We could hit the expected path.
@@ -506,6 +514,14 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 				rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 				require.NoError(t, err)
 				defer rootDir.Close()
+
+				// If the swapping subpaths are "." we need to use an absolute
+				// path because renaming "." isn't allowed.
+				for _, subPath := range []*string{&test.subPathA, &test.subPathB} {
+					if filepath.Join(root, *subPath) == root {
+						*subPath = root
+					}
+				}
 
 				// Run a goroutine that spams a rename in the root.
 				pauseCh := make(chan struct{})

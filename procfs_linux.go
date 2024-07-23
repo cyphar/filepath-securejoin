@@ -401,7 +401,7 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 		return "", fmt.Errorf("check safety of /proc/thread-self/fd/%d magiclink: %w", fd, err)
 	}
 
-	// readlinkat implies AT_EMPTY_PATH since Linux 2.6.38. See Linux commit
+	// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See Linux commit
 	// 65cfc6722361 ("readlinkat(), fchownat() and fstatat() with empty
 	// relative pathnames").
 	return readlinkatFile(procFdLink, "")

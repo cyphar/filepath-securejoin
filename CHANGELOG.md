@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   operations for `openat2`, and a modest improvement for non-`openat2`) and is
   far more guaranteed to match the correct `openat2(RESOLVE_IN_ROOT)`
   behaviour.
+- We now use `readlinkat(fd, "")` where possible. For `Open(at)InRoot` this
+  effectively just means that we no longer risk getting spurious errors during
+  rename races. However, for our hardened procfs handler, this in theory should
+  prevent mount attacks from tricking us when doing magic-link readlinks (even
+  when using the unsafe host `/proc` handle). Unfortunately `Reopen` is still
+  potentially vulnerable to those kinds of somewhat-esoteric attacks.
+
+  Technically this [will only work on post-2.6.39 kernels][linux-readlinkat-emptypath]
+  but it seems incredibly unlikely anyone is using `filepath-securejoin` on a
+  pre-2011 kernel.
 
 ### Fixed ###
 - Several improvements were made to the errors returned by `Open(at)InRoot` and
@@ -24,6 +34,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
   These changes were done to match `openat2`'s behaviour and purely is a
   consistency fix (most users are going to be using `openat2` anyway).
+
+[linux-readlinkat-emptypath]: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=65cfc6722361570bfe255698d9cd4dccaf47570d
 
 ## [0.3.0] - 2024-07-11 ##
 

@@ -136,17 +136,30 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 			symlinkOvermountErr = nil
 		}
 
-		// Check that /proc/self/exe and .
-		procThreadSelf, closer, err := procThreadSelf(procRoot, ".")
+		procSelf, closer, err := procThreadSelf(procRoot, ".")
 		require.NoError(t, err)
-		defer procThreadSelf.Close()
+		defer procSelf.Close()
 		defer closer()
 
+		// Open these paths directly to emulate a non-openat2 handle that
+		// didn't detect a bind-mount to check that checkSymlinkOvermount works
+		// properly for AT_EMPTY_PATH checks as well.
+		procCwd, err := openatFile(procSelf, "cwd", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		require.NoError(t, err)
+		defer procCwd.Close()
+		procExe, err := openatFile(procSelf, "exe", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		require.NoError(t, err)
+		defer procExe.Close()
+
 		// no overmount
-		err = checkSymlinkOvermount(procThreadSelf, "cwd")
+		err = checkSymlinkOvermount(procRoot, procCwd, "")
+		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed")
+		err = checkSymlinkOvermount(procRoot, procSelf, "cwd")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed")
 		// basic overmount
-		err = checkSymlinkOvermount(procThreadSelf, "exe")
+		err = checkSymlinkOvermount(procRoot, procExe, "")
+		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result")
+		err = checkSymlinkOvermount(procRoot, procSelf, "exe")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result")
 
 		// fd no overmount

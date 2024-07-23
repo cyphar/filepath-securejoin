@@ -65,6 +65,11 @@ func (s *symlinkStack) popPart(part string) error {
 		// real path provided by the user, and this is a no-op.
 		return errEmptyStack
 	}
+	if part == "." {
+		// "." components are no-ops -- we drop them when doing SwapLink.
+		return nil
+	}
+
 	tailEntry := (*s)[len(*s)-1]
 
 	// Double-check that we are popping the component we expect.
@@ -110,14 +115,7 @@ func (s *symlinkStack) push(dir *os.File, remainingPath, linkTarget string) erro
 	// Split the link target and clean up any "" parts.
 	linkTargetParts := slices.DeleteFunc(
 		strings.Split(linkTarget, "/"),
-		func(part string) bool { return part == "" })
-
-	// Don't add a no-op link to the stack. You can't create a no-op link
-	// symlink, but if the symlink is /, partialLookupInRoot has already jumped to the
-	// root and so there's nothing more to do.
-	if len(linkTargetParts) == 0 {
-		return nil
-	}
+		func(part string) bool { return part == "" || part == "." })
 
 	// Copy the directory so the caller doesn't close our copy.
 	dirCopy, err := dupFile(dir)
@@ -244,9 +242,11 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 		} else {
 			part, remainingPath = remainingPath[:i], remainingPath[i+1:]
 		}
-		// Skip any "//" components.
+		// If we hit an empty component, we need to treat it as though it is
+		// "." so that trailing "/" and "//" components on a non-directory
+		// correctly return the right error code.
 		if part == "" {
-			continue
+			part = "."
 		}
 
 		// Apply the component lexically to the path we are building.
@@ -365,6 +365,25 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 			return currentDir, oldRemainingPath, err
 		}
 	}
+
+	// If the unsafePath had a trailing slash, we need to make sure we try to
+	// do a relative "." open so that we will correctly return an error when
+	// the final component is a non-directory (to match openat2). In the
+	// context of openat2, a trailing slash and a trailing "/." are completely
+	// equivalent.
+	if strings.HasSuffix(unsafePath, "/") {
+		nextDir, err := openatFile(currentDir, ".", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err != nil {
+			if !partial {
+				_ = currentDir.Close()
+				currentDir = nil
+			}
+			return currentDir, "", err
+		}
+		_ = currentDir.Close()
+		currentDir = nextDir
+	}
+
 	// All of the components existed!
 	return currentDir, "", nil
 }

@@ -283,7 +283,9 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 
 			switch st.Mode() & os.ModeType {
 			case os.ModeSymlink:
-				// readlinkat implies AT_EMPTY_PATH.
+				// readlinkat implies AT_EMPTY_PATH since Linux 2.6.38. See
+				// Linux commit 65cfc6722361 ("readlinkat(), fchownat() and
+				// fstatat() with empty relative pathnames").
 				linkDest, err := readlinkatFile(nextDir, "")
 				// We don't need the handle anymore.
 				_ = nextDir.Close()

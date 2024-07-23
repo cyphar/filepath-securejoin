@@ -160,7 +160,7 @@ func clonePrivateProcMount() (_ *os.File, Err error) {
 }
 
 func privateProcRoot() (*os.File, error) {
-	if !hasNewMountApi() {
+	if !hasNewMountApi() || testingForceGetProcRootUnsafe() {
 		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
 	}
 	// Try to create a new procfs mount from scratch if we can. This ensures we
@@ -199,7 +199,7 @@ func unsafeHostProcRoot() (_ *os.File, Err error) {
 
 func doGetProcRoot() (*os.File, error) {
 	procRoot, err := privateProcRoot()
-	if err != nil || testingForceGetProcRootUnsafe(procRoot) {
+	if err != nil {
 		// Fall back to using a /proc handle if making a private mount failed.
 		// If we have openat2, at least we can avoid some kinds of over-mount
 		// attacks, but without openat2 there's not much we can do.

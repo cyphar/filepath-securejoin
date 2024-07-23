@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -458,8 +459,9 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			"swap-dir-danglinglink-basic":  {"a/b", "bad-link", "a/b/c/d/e", []error{unix.ENOENT}, slices.Clone(defaultExpected)},
 			"swap-dir-danglinglink-dotdot": {"a/b", "bad-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", []error{unix.ENOENT}, slices.Clone(defaultExpected)},
 			// Swap the root.
-			"swap-root-basic":  {".", "../outsideroot", "a/b/c/d/e", nil, slices.Clone(defaultExpected)},
-			"swap-root-dotdot": {".", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-root-basic":        {".", "../outsideroot", "a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-root-dotdot":       {".", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, slices.Clone(defaultExpected)},
+			"swap-root-dotdot-extra": {".", "../outsideroot", "a/" + strings.Repeat("b/c/d/../../../", 10) + "b/c/d/e", nil, slices.Clone(defaultExpected)},
 			// Swap one of our walking paths outside the root.
 			"swap-dir-outsideroot-basic": {"a/b", "../outsideroot", "a/b/c/d/e", nil, append(
 				// We could hit the expected path.
@@ -506,6 +508,14 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 				rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 				require.NoError(t, err)
 				defer rootDir.Close()
+
+				// If the swapping subpaths are "." we need to use an absolute
+				// path because renaming "." isn't allowed.
+				for _, subPath := range []*string{&test.subPathA, &test.subPathB} {
+					if filepath.Join(root, *subPath) == root {
+						*subPath = root
+					}
+				}
 
 				// Run a goroutine that spams a rename in the root.
 				pauseCh := make(chan struct{})

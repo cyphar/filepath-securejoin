@@ -82,6 +82,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 	} else if err != nil {
 		return nil, fmt.Errorf("re-opening handle to %q: %w", currentDir.Name(), err)
 	} else {
+		_ = currentDir.Close()
 		currentDir = reopenDir
 	}
 

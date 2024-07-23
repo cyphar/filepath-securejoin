@@ -87,6 +87,17 @@ func openat2File(dir *os.File, path string, how *unix.OpenHow) (*os.File, error)
 	return nil, &os.PathError{Op: "openat2", Path: fullPath, Err: errPossibleAttack}
 }
 
+func lookupOpenat2(root *os.File, unsafePath string, partial bool) (*os.File, string, error) {
+	if !partial {
+		file, err := openat2File(root, unsafePath, &unix.OpenHow{
+			Flags:   unix.O_PATH | unix.O_CLOEXEC,
+			Resolve: unix.RESOLVE_IN_ROOT | unix.RESOLVE_NO_MAGICLINKS,
+		})
+		return file, "", err
+	}
+	return partialLookupOpenat2(root, unsafePath)
+}
+
 // partialLookupOpenat2 is an alternative implementation of
 // partialLookupInRoot, using openat2(RESOLVE_IN_ROOT) to more safely get a
 // handle to the deepest existing child of the requested path within the root.

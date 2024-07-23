@@ -40,16 +40,18 @@ func (se symlinkStackEntry) Close() {
 
 type symlinkStack []*symlinkStackEntry
 
-func (s symlinkStack) IsEmpty() bool {
-	return len(s) == 0
+func (s *symlinkStack) IsEmpty() bool {
+	return s == nil || len(*s) == 0
 }
 
 func (s *symlinkStack) Close() {
-	for _, link := range *s {
-		link.Close()
+	if s != nil {
+		for _, link := range *s {
+			link.Close()
+		}
+		// TODO: Switch to clear once we switch to Go 1.21.
+		*s = nil
 	}
-	// TODO: Switch to clear once we switch to Go 1.21.
-	*s = nil
 }
 
 var (
@@ -58,7 +60,7 @@ var (
 )
 
 func (s *symlinkStack) popPart(part string) error {
-	if s.IsEmpty() {
+	if s == nil || s.IsEmpty() {
 		// If there is nothing in the symlink stack, then the part was from the
 		// real path provided by the user, and this is a no-op.
 		return errEmptyStack
@@ -102,6 +104,9 @@ func (s *symlinkStack) PopPart(part string) error {
 }
 
 func (s *symlinkStack) push(dir *os.File, remainingPath, linkTarget string) error {
+	if s == nil {
+		return nil
+	}
 	// Split the link target and clean up any "" parts.
 	linkTargetParts := slices.DeleteFunc(
 		strings.Split(linkTarget, "/"),
@@ -145,7 +150,7 @@ func (s *symlinkStack) SwapLink(linkPart string, dir *os.File, remainingPath, li
 }
 
 func (s *symlinkStack) PopTopSymlink() (*os.File, string, bool) {
-	if s.IsEmpty() {
+	if s == nil || s.IsEmpty() {
 		return nil, "", false
 	}
 	tailEntry := (*s)[0]
@@ -157,7 +162,22 @@ func (s *symlinkStack) PopTopSymlink() (*os.File, string, bool) {
 // within the provided root (a-la RESOLVE_IN_ROOT) and opens the final existing
 // component of the requested path, returning a file handle to the final
 // existing component and a string containing the remaining path components.
-func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ string, _ error) {
+func partialLookupInRoot(root *os.File, unsafePath string) (*os.File, string, error) {
+	return lookupInRoot(root, unsafePath, true)
+}
+
+func completeLookupInRoot(root *os.File, unsafePath string) (*os.File, error) {
+	handle, remainingPath, err := lookupInRoot(root, unsafePath, false)
+	if remainingPath != "" && err == nil {
+		// should never happen
+		err = fmt.Errorf("[bug] non-empty remaining path when doing a non-partial lookup: %q", remainingPath)
+	}
+	// lookupInRoot(partial=false) will always close the handle if an error is
+	// returned, so no need to double-check here.
+	return handle, err
+}
+
+func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.File, _ string, _ error) {
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 
 	// This is very similar to SecureJoin, except that we operate on the
@@ -166,7 +186,7 @@ func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ s
 
 	// Try to use openat2 if possible.
 	if hasOpenat2() {
-		return partialLookupOpenat2(root, unsafePath)
+		return lookupOpenat2(root, unsafePath, partial)
 	}
 
 	// Get the "actual" root path from /proc/self/fd. This is necessary if the
@@ -201,8 +221,11 @@ func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ s
 	// Note that the stack is ONLY used for book-keeping. All of the actual
 	// path walking logic is still based on currentPath/remainingPath and
 	// currentDir (as in SecureJoin).
-	var symlinkStack symlinkStack
-	defer symlinkStack.Close()
+	var symStack *symlinkStack
+	if partial {
+		symStack = new(symlinkStack)
+		defer symStack.Close()
+	}
 
 	var (
 		linksWalked   int
@@ -234,7 +257,7 @@ func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ s
 		// If we logically hit the root, just clone the root rather than
 		// opening the part and doing all of the other checks.
 		if nextPath == "/" {
-			if err := symlinkStack.PopPart(part); err != nil {
+			if err := symStack.PopPart(part); err != nil {
 				return nil, "", fmt.Errorf("walking into root with part %q failed: %w", part, err)
 			}
 			// Jump to root.
@@ -270,11 +293,11 @@ func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ s
 
 				linksWalked++
 				if linksWalked > maxSymlinkLimit {
-					return nil, "", &os.PathError{Op: "partialLookupInRoot", Path: logicalRootPath + "/" + unsafePath, Err: unix.ELOOP}
+					return nil, "", &os.PathError{Op: "securejoin.lookupInRoot", Path: logicalRootPath + "/" + unsafePath, Err: unix.ELOOP}
 				}
 
 				// Swap out the symlink's component for the link entry itself.
-				if err := symlinkStack.SwapLink(part, currentDir, oldRemainingPath, linkDest); err != nil {
+				if err := symStack.SwapLink(part, currentDir, oldRemainingPath, linkDest); err != nil {
 					return nil, "", fmt.Errorf("walking into symlink %q failed: push symlink: %w", part, err)
 				}
 
@@ -299,7 +322,7 @@ func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ s
 				currentPath = nextPath
 
 				// The part was real, so drop it from the symlink stack.
-				if err := symlinkStack.PopPart(part); err != nil {
+				if err := symStack.PopPart(part); err != nil {
 					return nil, "", fmt.Errorf("walking into directory %q failed: %w", part, err)
 				}
 
@@ -323,11 +346,14 @@ func partialLookupInRoot(root *os.File, unsafePath string) (Handle *os.File, _ s
 			}
 
 		default:
+			if !partial {
+				return nil, "", err
+			}
 			// If there are any remaining components in the symlink stack, we
 			// are still within a symlink resolution and thus we hit a dangling
 			// symlink. So pretend that the first symlink in the stack we hit
 			// was an ENOENT (to match openat2).
-			if oldDir, remainingPath, ok := symlinkStack.PopTopSymlink(); ok {
+			if oldDir, remainingPath, ok := symStack.PopTopSymlink(); ok {
 				_ = currentDir.Close()
 				return oldDir, remainingPath, err
 			}

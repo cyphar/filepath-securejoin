@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   users thinking their code sets these bits when it doesn't. Programs that need
   to deal with compatibility can mask the bits themselves. (#23, #25)
 
+## Fixes ##
+- If a directory has `S_ISGID` set, then all child directories will have
+  `S_ISGID` set when created and a different gid will be used for any inode
+  created under the directory. Previously, the "expected owner and mode"
+  validation in `securejoin.MkdirAll` did not correctly handle this. We now
+  correctly handle this case. (#24, #25)
+
 ## [0.3.1] - 2024-07-23 ##
 
 ### Changed ###

@@ -127,6 +127,17 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		expectedGid = uint32(unix.Getegid())
 	)
 
+	// The setgid bit (S_ISGID = 0o2000) is inherited to child directories and
+	// affects the group of any inodes created in said directory, so if the
+	// starting directory has it set we need to adjust our expected mode and
+	// owner to match.
+	if st, err := fstatFile(currentDir); err != nil {
+		return nil, fmt.Errorf("failed to stat starting path for mkdir %q: %w", currentDir.Name(), err)
+	} else if st.Mode&unix.S_ISGID == unix.S_ISGID {
+		expectedMode |= unix.S_ISGID
+		expectedGid = st.Gid
+	}
+
 	// Create the remaining components.
 	for _, part := range remainingParts {
 		switch part {

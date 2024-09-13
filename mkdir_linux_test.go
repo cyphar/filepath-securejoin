@@ -54,7 +54,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	return nil
 }
 
-func checkMkdirAll(t *testing.T, partialLookupFn partialLookupFunc, root, unsafePath string, mode, expectedMode int, expectedErr error) {
+func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string, mode, expectedMode int, expectedErr error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
 	defer rootDir.Close()
@@ -72,9 +72,6 @@ func checkMkdirAll(t *testing.T, partialLookupFn partialLookupFunc, root, unsafe
 			t.Logf("partialLookupInRoot(%s, %s) -> (<%s>, %s, %v)", root, unsafePath, handleName, remainingPath, err)
 		}
 	}()
-
-	// This mode is different to the one set up by createTree.
-	const expectedMode = 0o711
 
 	// Actually make the tree.
 	err = mkdirAll(t, root, unsafePath, mode)
@@ -128,6 +125,9 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) {
 		// Symlink loop.
 		"dir loop",
 		"symlink loop/link ../loop/link",
+		// S_ISGID directory.
+		"dir sgid-self ::2755",
+		"dir sgid-sticky-self ::3755",
 	}
 
 	withWithoutOpenat2(t, true, func(t *testing.T) {
@@ -182,13 +182,14 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) {
 			"loop-basic":    {unsafePath: "loop/link/foo", expectedErr: unix.ELOOP},
 			"loop-dotdot":   {unsafePath: "loop/link/../foo", expectedErr: unix.ELOOP},
 			// Make sure the S_ISGID handling is correct.
-			"sgid-self": {unsafePath: "sgid-self/"}
+			"sgid-dir-ownedbyus":        {unsafePath: "sgid-self/foo/bar/baz", expectedModeBits: unix.S_ISGID},
+			"sgid-sticky-dir-ownedbyus": {unsafePath: "sgid-sticky-self/foo/bar/baz", expectedModeBits: unix.S_ISGID},
 		} {
 			test := test // copy iterator
 			t.Run(name, func(t *testing.T) {
 				root := createTree(t, tree...)
 				const mode = 0o711
-				checkMkdirAll(t, mkdirAll, root, test.unsafePath, mode, test.expectedModeBits|mode)
+				checkMkdirAll(t, mkdirAll, root, test.unsafePath, mode, test.expectedModeBits|mode, test.expectedErr)
 			})
 		}
 	})
@@ -202,7 +203,49 @@ func TestMkdirAllHandle_Basic(t *testing.T) {
 	testMkdirAll_Basic(t, mkdirAll_MkdirAllHandle)
 }
 
-func testMkdirAll_InvalidMode(t *testing.T, mkdirAll func(t *testing.T, root, unsafePath string, mode int) error) {
+func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) {
+	requireRoot(t) // chown
+
+	// We create a new tree for each test, but the template is the same.
+	tree := []string{
+		// S_ISGID directories.
+		"dir sgid-self ::2755",
+		"dir sgid-other 1000:1000:2755",
+		"dir sgid-sticky-self ::3755",
+		"dir sgid-sticky-other 1000:1000:3755",
+	}
+
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		for name, test := range map[string]struct {
+			unsafePath       string
+			expectedErr      error
+			expectedModeBits int
+		}{
+			// Make sure the S_ISGID handling is correct.
+			"sgid-dir-ownedbyus":           {unsafePath: "sgid-self/foo/bar/baz", expectedModeBits: unix.S_ISGID},
+			"sgid-dir-ownedbyother":        {unsafePath: "sgid-other/foo/bar/baz", expectedModeBits: unix.S_ISGID},
+			"sgid-sticky-dir-ownedbyus":    {unsafePath: "sgid-sticky-self/foo/bar/baz", expectedModeBits: unix.S_ISGID},
+			"sgid-sticky-dir-ownedbyother": {unsafePath: "sgid-sticky-other/foo/bar/baz", expectedModeBits: unix.S_ISGID},
+		} {
+			test := test // copy iterator
+			t.Run(name, func(t *testing.T) {
+				root := createTree(t, tree...)
+				const mode = 0o711
+				checkMkdirAll(t, mkdirAll, root, test.unsafePath, mode, test.expectedModeBits|mode, test.expectedErr)
+			})
+		}
+	})
+}
+
+func TestMkdirAll_AsRoot(t *testing.T) {
+	testMkdirAll_AsRoot(t, mkdirAll_MkdirAll)
+}
+
+func TestMkdirAllHandle_AsRoot(t *testing.T) {
+	testMkdirAll_AsRoot(t, mkdirAll_MkdirAllHandle)
+}
+
+func testMkdirAll_InvalidMode(t *testing.T, mkdirAll mkdirAllFunc) {
 	for _, test := range []struct {
 		mode        int
 		expectedErr error

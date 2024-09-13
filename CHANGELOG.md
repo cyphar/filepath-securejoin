@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   users thinking their code sets these bits when it doesn't. Programs that need
   to deal with compatibility can mask the bits themselves. (#23, #25)
 
-## Fixes ##
+### Fixed ###
 - If a directory has `S_ISGID` set, then all child directories will have
   `S_ISGID` set when created and a different gid will be used for any inode
   created under the directory. Previously, the "expected owner and mode"

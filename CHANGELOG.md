@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Changed ###
+- Passing the `S_ISUID` or `S_ISGID` modes to `MkdirAllInRoot` will now return
+  an explicit error saying that those bits are ignored by `mkdirat(2)`. In the
+  past a different error was returned, but since the silent ignoring behaviour
+  is codified in the man pages a more explicit error seems apt. While silently
+  ignoring these bits would be the most compatible option, it could lead to
+  users thinking their code sets these bits when it doesn't. Programs that need
+  to deal with compatibility can mask the bits themselves. (#23, #25)
+
+## Fixes ##
+- If a directory has `S_ISGID` set, then all child directories will have
+  `S_ISGID` set when created and a different gid will be used for any inode
+  created under the directory. Previously, the "expected owner and mode"
+  validation in `securejoin.MkdirAll` did not correctly handle this. We now
+  correctly handle this case. (#24, #25)
+
 ## [0.3.1] - 2024-07-23 ##
 
 ### Changed ###

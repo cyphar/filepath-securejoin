@@ -7,6 +7,7 @@
 package securejoin
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -42,6 +43,13 @@ func doMount(t *testing.T, source, target, fsType string, flags uintptr) {
 	}
 
 	err := unix.Mount(sourcePath, targetPath, fsType, flags, "")
+	if errors.Is(err, unix.ENOENT) {
+		// Future kernels will block these kinds of mounts by marking all of
+		// these dentries with dont_mount(), which returns -ENOENT from mount.
+		// See <https://lore.kernel.org/all/20240806-work-procfs-v1-0-fb04e1d09f0c@kernel.org/>,
+		// which should make it into Linux 6.12. So ignore those errors.
+		t.Skipf("current kernel does not allow /proc overmounts -- all proc operations are implicitly safe")
+	}
 	require.NoErrorf(t, err, "mount(%s<%s>, %s<%s>, %s, 0x%x)", sourcePath, source, targetPath, target, fsType, flags)
 }
 

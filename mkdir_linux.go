@@ -46,6 +46,13 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 	if mode&^0o7777 != 0 {
 		return nil, fmt.Errorf("%w for mkdir 0o%.3o", errInvalidMode, mode)
 	}
+	// On Linux, mkdirat(2) (and os.Mkdir) silently ignore the suid and sgid
+	// bits. We could also silently ignore them but since we have very few
+	// users it seems more prudent to return an error so users notice that
+	// these bits will not be set.
+	if mode&^0o1777 != 0 {
+		return nil, fmt.Errorf("%w for mkdir 0o%.3o: suid and sgid are ignored by mkdir", errInvalidMode, mode)
+	}
 
 	// Try to open as much of the path as possible.
 	currentDir, remainingPath, err := partialLookupInRoot(root, unsafePath)

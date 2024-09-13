@@ -204,12 +204,11 @@ func testMkdirAll_InvalidMode(t *testing.T, mkdirAll func(t *testing.T, root, un
 		{unix.S_IFDIR | 0o777, errInvalidMode},
 		{unix.S_IFREG | 0o777, errInvalidMode},
 		{unix.S_IFIFO | 0o777, errInvalidMode},
-		// suid/sgid bits are valid but you get an error because they don't get
-		// applied by mkdirat.
-		// TODO: Figure out if we want to allow this.
-		{unix.S_ISUID | 0o777, errPossibleAttack},
-		{unix.S_ISGID | 0o777, errPossibleAttack},
-		{unix.S_ISUID | unix.S_ISGID | unix.S_ISVTX | 0o777, errPossibleAttack},
+		// suid/sgid bits are silently ignored by mkdirat and so we return an
+		// error explicitly.
+		{unix.S_ISUID | 0o777, errInvalidMode},
+		{unix.S_ISGID | 0o777, errInvalidMode},
+		{unix.S_ISUID | unix.S_ISGID | unix.S_ISVTX | 0o777, errInvalidMode},
 		// Proper sticky bit should work.
 		{unix.S_ISVTX | 0o777, nil},
 		// Regular mode bits.

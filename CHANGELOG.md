@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Changed ###
+- Passing the `S_ISUID` or `S_ISGID` modes to `MkdirAllInRoot` will now return
+  an explicit error saying that those bits are ignored by `mkdirat(2)`. In the
+  past a different error was returned, but since the silent ignoring behaviour
+  is codified in the man pages a more explicit error seems apt. While silently
+  ignoring these bits would be the most compatible option, it could lead to
+  users thinking their code sets these bits when it doesn't. Programs that need
+  to deal with compatibility can mask the bits themselves. (#23, #25)
+
 ## [0.3.1] - 2024-07-23 ##
 
 ### Changed ###

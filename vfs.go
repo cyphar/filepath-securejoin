@@ -30,12 +30,6 @@ type VFS interface {
 // module.
 type osVFS struct{}
 
-// Lstat returns a FileInfo describing the named file. If the file is a
-// symbolic link, the returned FileInfo describes the symbolic link. Lstat
-// makes no attempt to follow the link. These semantics are identical to
-// os.Lstat.
 func (o osVFS) Lstat(name string) (os.FileInfo, error) { return os.Lstat(name) }
 
-// Readlink returns the destination of the named symbolic link. These
-// semantics are identical to os.Readlink.
 func (o osVFS) Readlink(name string) (string, error) { return os.Readlink(name) }

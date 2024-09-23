@@ -59,7 +59,9 @@ func OpenInRoot(root, unsafePath string) (*os.File, error) {
 // maliciously-configured /proc mount. While this attack scenario is not
 // common, in container runtimes it is possible for higher-level runtimes to be
 // tricked into configuring an unsafe /proc that can be used to attack file
-// operations. See CVE-2019-19921 for more details.
+// operations. See [CVE-2019-19921] for more details.
+//
+// [CVE-2019-19921]: https://github.com/advisories/GHSA-fh74-hm69-rqjw
 func Reopen(handle *os.File, flags int) (*os.File, error) {
 	procRoot, err := getProcRoot()
 	if err != nil {

@@ -119,3 +119,10 @@ jobs:
         with:
           name: fullcoverage-${{ github.job }}.html
           path: ${{ env.FULLCOVERAGE_FILE }}.html
+
+  codespell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install codespell==v2.3.0
+      - run: codespell

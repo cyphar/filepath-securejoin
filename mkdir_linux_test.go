@@ -39,7 +39,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	}
 	defer handle.Close()
 
-	// We can use SecureJoin here becuase we aren't being attacked in this
+	// We can use SecureJoin here because we aren't being attacked in this
 	// particular test. Obviously this check is bogus for actual programs.
 	expectedPath, err := SecureJoin(root, unsafePath)
 	require.NoError(t, err)

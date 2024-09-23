@@ -275,7 +275,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 		// absolutely sure we are operating on a clean /proc handle that
 		// doesn't have any cheeky overmounts that could trick us (including
 		// symlink mounts on top of /proc/thread-self). RESOLVE_BENEATH isn't
-		// stricly needed, but just use it since we have it.
+		// strictly needed, but just use it since we have it.
 		//
 		// NOTE: /proc/self is technically a magic-link (the contents of the
 		//       symlink are generated dynamically), but it doesn't use

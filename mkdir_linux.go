@@ -22,23 +22,23 @@ var (
 	errPossibleAttack = errors.New("possible attack detected")
 )
 
-// MkdirAllHandle is equivalent to MkdirAll, except that it is safer to use in
-// two respects:
+// MkdirAllHandle is equivalent to [MkdirAll], except that it is safer to use
+// in two respects:
 //
-//   - The caller provides the root directory as an *os.File (preferably O_PATH)
+//   - The caller provides the root directory as an *[os.File] (preferably O_PATH)
 //     handle. This means that the caller can be sure which root directory is
 //     being used. Note that this can be emulated by using /proc/self/fd/... as
-//     the root path with MkdirAll.
+//     the root path with [os.MkdirAll].
 //
-//   - Once all of the directories have been created, an *os.File (O_PATH) handle
+//   - Once all of the directories have been created, an *[os.File] O_PATH handle
 //     to the directory at unsafePath is returned to the caller. This is done in
 //     an effectively-race-free way (an attacker would only be able to swap the
 //     final directory component), which is not possible to emulate with
-//     MkdirAll.
+//     [MkdirAll].
 //
 // In addition, the returned handle is obtained far more efficiently than doing
-// a brand new lookup of unsafePath (such as with SecureJoin or openat2) after
-// doing MkdirAll. If you intend to open the directory after creating it, you
+// a brand new lookup of unsafePath (such as with [SecureJoin] or openat2) after
+// doing [MkdirAll]. If you intend to open the directory after creating it, you
 // should use MkdirAllHandle.
 func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err error) {
 	// Make sure there are no os.FileMode bits set.
@@ -168,7 +168,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 	return currentDir, nil
 }
 
-// MkdirAll is a race-safe alternative to the Go stdlib's os.MkdirAll function,
+// MkdirAll is a race-safe alternative to the [os.MkdirAll] function,
 // where the new directory is guaranteed to be within the root directory (if an
 // attacker can move directories from inside the root to outside the root, the
 // created directory tree might be outside of the root but the key constraint
@@ -181,16 +181,16 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 //	err := os.MkdirAll(path, mode)
 //
 // But is much safer. The above implementation is unsafe because if an attacker
-// can modify the filesystem tree between SecureJoin and MkdirAll, it is
+// can modify the filesystem tree between [SecureJoin] and [os.MkdirAll], it is
 // possible for MkdirAll to resolve unsafe symlink components and create
 // directories outside of the root.
 //
 // If you plan to open the directory after you have created it or want to use
-// an open directory handle as the root, you should use MkdirAllHandle instead.
-// This function is a wrapper around MkdirAllHandle.
+// an open directory handle as the root, you should use [MkdirAllHandle] instead.
+// This function is a wrapper around [MkdirAllHandle].
 //
 // NOTE: The mode argument must be set the unix mode bits (unix.S_I...), not
-// the Go generic mode bits (os.Mode...).
+// the Go generic mode bits ([os.FileMode]...).
 func MkdirAll(root, unsafePath string, mode int) error {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {

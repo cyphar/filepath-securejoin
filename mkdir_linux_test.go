@@ -314,12 +314,9 @@ func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafeP
 	}
 	defer handle.Close()
 
-	// Make sure the handle has the right owner/mode.
-	unixStat, err := fstat(handle)
-	require.NoError(t, err, "stat mkdirall handle")
-	assert.Equal(t, uint32(unix.S_IFDIR|mode), unixStat.Mode, "mkdirall handle mode")
-	assert.Equal(t, uint32(unix.Geteuid()), unixStat.Uid, "mkdirall handle uid")
-	assert.Equal(t, uint32(unix.Getegid()), unixStat.Gid, "mkdirall handle gid")
+	// It's possible for an attacker to have swapped the final directory, but
+	// this is okay because MkdirAll will use pre-existing directories anyway.
+	// So there's no need to check the returned handle.
 	// TODO: Does it make sense to even try to check the handle path?
 	m.passOkCount++
 }
@@ -346,8 +343,8 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) {
 
 		tests := []test{
 			{"good", "target/a/b/c/d/e", "swapdir-empty-ok", "target/a/b/c/d/e/f/g/h/i/j/k", nil},
-			{"trailing", "target/a/b/c/d/e", "swapdir-empty-badmode", "target/a/b/c/d/e", []error{errPossibleAttack}},
-			{"partial", "target/a/b/c/d/e", "swapdir-empty-badmode", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+			{"trailing", "target/a/b/c/d/e", "swapdir-empty-badmode", "target/a/b/c/d/e", nil},
+			{"partial", "target/a/b/c/d/e", "swapdir-empty-badmode", "target/a/b/c/d/e/f/g/h/i/j/k", nil},
 			{"trailing", "target/a/b/c/d/e", "swapdir-nonempty1", "target/a/b/c/d/e", []error{errPossibleAttack}},
 			{"partial", "target/a/b/c/d/e", "swapdir-nonempty1", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
 			{"trailing", "target/a/b/c/d/e", "swapdir-nonempty2", "target/a/b/c/d/e", []error{errPossibleAttack}},
@@ -364,12 +361,12 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) {
 				"dir swapdir-empty-badowner3 111:222:0711",
 			)
 			tests = append(tests, []test{
-				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner1", "target/a/b/c/d/e", []error{errPossibleAttack}},
-				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner1", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
-				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner2", "target/a/b/c/d/e", []error{errPossibleAttack}},
-				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner2", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
-				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner3", "target/a/b/c/d/e", []error{errPossibleAttack}},
-				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner3", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errPossibleAttack}},
+				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner1", "target/a/b/c/d/e", nil},
+				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner1", "target/a/b/c/d/e/f/g/h/i/j/k", nil},
+				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner2", "target/a/b/c/d/e", nil},
+				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner2", "target/a/b/c/d/e/f/g/h/i/j/k", nil},
+				{"trailing", "target/a/b/c/d/e", "swapdir-empty-badowner3", "target/a/b/c/d/e", nil},
+				{"partial", "target/a/b/c/d/e", "swapdir-empty-badowner3", "target/a/b/c/d/e/f/g/h/i/j/k", nil},
 			}...)
 		}
 

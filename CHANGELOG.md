@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Fixed ###
+- The mode and owner verification logic in `MkdirAll` has been removed. This
+  was originally intended to protect against some theoretical attacks but upon
+  further consideration these protections don't actually buy us anything and
+  they were causing spurious errors with more complicated filesystem setups.
+
 ## [0.3.2] - 2024-09-13 ##
 
 ### Changed ###

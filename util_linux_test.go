@@ -35,8 +35,9 @@ func withWithoutOpenat2(t *testing.T, doAuto bool, testFn func(t *testing.T)) {
 			if useOpenat2 && !hasOpenat2() {
 				t.Skip("no openat2 support")
 			}
-			testingForceHasOpenat2 = &useOpenat2
-			defer func() { testingForceHasOpenat2 = nil }()
+			origHasOpenat2 := hasOpenat2
+			hasOpenat2 = func() bool { return useOpenat2 }
+			defer func() { hasOpenat2 = origHasOpenat2 }()
 
 			testFn(t)
 		})

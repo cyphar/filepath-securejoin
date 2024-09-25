@@ -60,10 +60,6 @@ jobs:
           - "1.21"
           - "1.22"
           - "^1"
-        exclude:
-          # It seems MacOS 1.14 is no longer cached by actions/setup-go.
-          - os: macos-latest
-            go-version: "1.14"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -123,3 +119,10 @@ jobs:
         with:
           name: fullcoverage-${{ github.job }}.html
           path: ${{ env.FULLCOVERAGE_FILE }}.html
+
+  codespell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install codespell==v2.3.0
+      - run: codespell

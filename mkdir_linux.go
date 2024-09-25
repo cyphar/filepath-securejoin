@@ -147,7 +147,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		}
 
 		// NOTE: mkdir(2) will not follow trailing symlinks, so we can safely
-		// create the finaly component without worrying about symlink-exchange
+		// create the final component without worrying about symlink-exchange
 		// attacks.
 		if err := unix.Mkdirat(int(currentDir.Fd()), part, uint32(mode)); err != nil {
 			err = &os.PathError{Op: "mkdirat", Path: currentDir.Name() + "/" + part, Err: err}

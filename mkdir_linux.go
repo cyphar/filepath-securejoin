@@ -9,7 +9,6 @@ package securejoin
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -146,10 +145,13 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		_ = currentDir.Close()
 		currentDir = nextDir
 
-		// Try our best to check that the directory is empty and so is unlikely
-		// to have been swapped by an attacker.
+		// It's possible that the directory we just opened was swapped by an
+		// attacker. Unfortunately there isn't much we can do to protect
+		// against this, and MkdirAll's behaviour is that we will reuse
+		// existing directories anyway so the need to protect against this is
+		// incredibly limited (and arguably doesn't even deserve mention here).
 		//
-		// Ideally we would also check that the owner and mode match what we
+		// Ideally we might want to check that the owner and mode match what we
 		// would've created -- unfortunately, it is non-trivial to verify that
 		// the owner and mode of the created directory match. While plain Unix
 		// DAC rules seem simple enough to emulate, there are a bunch of other
@@ -158,21 +160,10 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode int) (_ *os.File, Err
 		// filesystems like vfat, etc etc). We used to try to verify this but
 		// it just lead to a series of spurious errors.
 		//
-		// To be honest, since MkdirAll allows you to use existing directories,
-		// the practical scope of this protection seems very limited (if it
-		// even exists) so it really isn't that important.
-
-		// We only need to check for a single entry to see if it's empty, and
-		// we should get EOF if the directory is empty.
-		_, err := currentDir.Readdirnames(1)
-		if !errors.Is(err, io.EOF) {
-			if err == nil {
-				err = fmt.Errorf("%w: newly created directory %q is non-empty", errPossibleAttack, currentDir.Name())
-			}
-			return nil, fmt.Errorf("check if newly created directory %q is empty: %w", currentDir.Name(), err)
-		}
-		// Reset the offset.
-		_, _ = currentDir.Seek(0, unix.SEEK_SET)
+		// We could also check that the directory is non-empty, but
+		// unfortunately some pseduofilesystems (like cgroupfs) create
+		// non-empty directories, which would result in different spurious
+		// errors.
 	}
 	return currentDir, nil
 }

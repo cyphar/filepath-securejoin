@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -111,6 +112,8 @@ func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir *os
 					// enter a bad filesystem state if we get paused.
 					panic(fmt.Sprintf("renameat2([%d]%q, %q, ..., %q, RENAME_EXCHANGE) = %v", int(dir.Fd()), dir.Name(), pathA, pathB, err))
 				}
+				// Make sure GC doesn't close the directory handle.
+				runtime.KeepAlive(dir)
 			}
 		}
 	}

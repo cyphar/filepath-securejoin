@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+## [0.3.3] - 2024-09-30 ##
+
 ### Fixed ###
 - The mode and owner verification logic in `MkdirAll` has been removed. This
   was originally intended to protect against some theoretical attacks but upon
@@ -155,7 +157,8 @@ This is our first release of `github.com/cyphar/filepath-securejoin`,
 containing a full implementation with a coverage of 93.5% (the only missing
 cases are the error cases, which are hard to mocktest at the moment).
 
-[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/cyphar/filepath-securejoin/compare/v0.2.5...v0.3.0

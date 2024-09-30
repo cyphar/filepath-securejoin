@@ -411,22 +411,6 @@ func isDeadInode(file *os.File) error {
 	return nil
 }
 
-func getUmask() int {
-	// umask is a per-thread property, but it is inherited by children, so we
-	// need to lock our OS thread to make sure that no other goroutine runs in
-	// this thread and no goroutines are spawned from this thread until we
-	// revert to the old umask.
-	//
-	// We could parse /proc/self/status to avoid this get-set problem, but
-	// /proc/thread-self requires LockOSThread anyway, so there's no real
-	// benefit over just using umask(2).
-	runtime.LockOSThread()
-	umask := unix.Umask(0)
-	unix.Umask(umask)
-	runtime.UnlockOSThread()
-	return umask
-}
-
 func checkProcSelfFdPath(path string, file *os.File) error {
 	if err := isDeadInode(file); err != nil {
 		return err

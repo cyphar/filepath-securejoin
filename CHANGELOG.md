@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Fixed ###
+- The mode and owner verification logic in `MkdirAll` has been removed. This
+  was originally intended to protect against some theoretical attacks but upon
+  further consideration these protections don't actually buy us anything and
+  they were causing spurious errors with more complicated filesystem setups.
+- The "is the created directory empty" logic in `MkdirAll` has also been
+  removed. This was not causing us issues yet, but some pseudofilesystems (such
+  as `cgroup`) create non-empty directories and so this logic would've been
+  wrong for such cases.
+
 ## [0.3.2] - 2024-09-13 ##
 
 ### Changed ###

@@ -107,15 +107,15 @@ func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir *os
 			// "correct" state.
 			for i := 0; i < 2; i++ {
 				err := unix.Renameat2(int(dir.Fd()), pathA, int(dir.Fd()), pathB, unix.RENAME_EXCHANGE)
-				if err != nil && !errors.Is(err, unix.EBADF) {
+				if err != nil && int(dir.Fd()) != -1 && !errors.Is(err, unix.EBADF) {
 					// Should never happen, and if it does we will potentially
 					// enter a bad filesystem state if we get paused.
 					panic(fmt.Sprintf("renameat2([%d]%q, %q, ..., %q, RENAME_EXCHANGE) = %v", int(dir.Fd()), dir.Name(), pathA, pathB, err))
 				}
-				// Make sure GC doesn't close the directory handle.
-				runtime.KeepAlive(dir)
 			}
 		}
+		// Make sure GC doesn't close the directory handle.
+		runtime.KeepAlive(dir)
 	}
 }
 

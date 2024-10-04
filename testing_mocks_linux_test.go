@@ -66,3 +66,11 @@ func testingForceProcSelf() bool {
 	return testing.Testing() && testingForceProcThreadSelf != nil &&
 		*testingForceProcThreadSelf >= forceProcSelf
 }
+
+func init() {
+	hookForceGetProcRootUnsafe = testingForceGetProcRootUnsafe
+	hookForcePrivateProcRootOpenTree = testingForcePrivateProcRootOpenTree
+	hookForcePrivateProcRootOpenTreeAtRecursive = testingForcePrivateProcRootOpenTreeAtRecursive
+	hookForceProcSelf = testingForceProcSelf
+	hookForceProcSelfTask = testingForceProcSelfTask
+}

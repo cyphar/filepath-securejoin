@@ -425,17 +425,16 @@ func checkProcSelfFdPath(path string, file *os.File) error {
 	return nil
 }
 
-// Test hooks
-var hookForcePrivateProcRootOpenTree = func(_ *os.File) bool {
-	return false
-}
+// Test hooks used in the procfs tests to verify that the fallback logic works.
+// See testing_mocks_linux_test.go and procfs_linux_test.go for more details.
+var (
+	hookForcePrivateProcRootOpenTree            = hookDummyFile
+	hookForcePrivateProcRootOpenTreeAtRecursive = hookDummyFile
+	hookForceGetProcRootUnsafe                  = hookDummy
 
-var hookForcePrivateProcRootOpenTreeAtRecursive = hookForcePrivateProcRootOpenTree
+	hookForceProcSelfTask = hookDummy
+	hookForceProcSelf     = hookDummy
+)
 
-var hookForceGetProcRootUnsafe = func() bool {
-	return false
-}
-
-var hookForceProcSelfTask = hookForceGetProcRootUnsafe
-
-var hookForceProcSelf = hookForceGetProcRootUnsafe
+func hookDummy() bool               { return false }
+func hookDummyFile(_ *os.File) bool { return false }

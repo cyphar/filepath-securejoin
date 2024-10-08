@@ -71,6 +71,7 @@ func init() {
 	hookForceGetProcRootUnsafe = testingForceGetProcRootUnsafe
 	hookForcePrivateProcRootOpenTree = testingForcePrivateProcRootOpenTree
 	hookForcePrivateProcRootOpenTreeAtRecursive = testingForcePrivateProcRootOpenTreeAtRecursive
+
 	hookForceProcSelf = testingForceProcSelf
 	hookForceProcSelfTask = testingForceProcSelfTask
 }

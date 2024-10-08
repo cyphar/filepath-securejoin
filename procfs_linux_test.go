@@ -418,3 +418,8 @@ func TestVerifyProcRoot_NotProc(t *testing.T) {
 		testVerifyProcRoot(t, t.TempDir(), errUnsafeProcfs, "incorrect procfs root filesystem type")
 	})
 }
+
+func TestProcfsDummyHooks(t *testing.T) {
+	assert.False(t, hookDummy(), "hookDummy should always return false")
+	assert.False(t, hookDummyFile(nil), "hookDummyFile should always return false")
+}

@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Fixed ###
+- Previously, some testing mocks we had resulted in us doing `import "testing"`
+  in non-`_test.go` code, which made some downstreams like Kubernetes unhappy.
+  This has been fixed. (#32)
+
 ## [0.3.3] - 2024-09-30 ##
 
 ### Fixed ###

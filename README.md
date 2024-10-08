@@ -1,5 +1,6 @@
 ## `filepath-securejoin` ##
 
+[![Go Documentation](https://pkg.go.dev/badge/github.com/cyphar/filepath-securejoin.svg)](https://pkg.go.dev/github.com/cyphar/filepath-securejoin)
 [![Build Status](https://github.com/cyphar/filepath-securejoin/actions/workflows/ci.yml/badge.svg)](https://github.com/cyphar/filepath-securejoin/actions/workflows/ci.yml)
 
 ### Old API ###

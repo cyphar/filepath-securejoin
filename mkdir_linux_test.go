@@ -19,14 +19,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode int) error
+type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode FileMode) error
 
-var mkdirAll_MkdirAll mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode int) error {
+var mkdirAll_MkdirAll mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode FileMode) error {
 	// We can't check expectedPath here.
 	return MkdirAll(root, unsafePath, mode)
 }
 
-var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode int) error {
+var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode FileMode) error {
 	// Same logic as MkdirAll.
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -54,7 +54,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	return nil
 }
 
-func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string, mode, expectedMode int, expectedErr error) {
+func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string, mode, expectedMode FileMode, expectedErr error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
 	defer rootDir.Close()
@@ -134,7 +134,7 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) {
 		for name, test := range map[string]struct {
 			unsafePath       string
 			expectedErr      error
-			expectedModeBits int
+			expectedModeBits FileMode
 		}{
 			"existing":              {unsafePath: "a"},
 			"basic":                 {unsafePath: "a/b/c/d/e/f/g/h/i/j"},
@@ -219,7 +219,7 @@ func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) {
 		for name, test := range map[string]struct {
 			unsafePath       string
 			expectedErr      error
-			expectedModeBits int
+			expectedModeBits FileMode
 		}{
 			// Make sure the S_ISGID handling is correct.
 			"sgid-dir-ownedbyus":           {unsafePath: "sgid-self/foo/bar/baz", expectedModeBits: unix.S_ISGID},
@@ -247,13 +247,13 @@ func TestMkdirAllHandle_AsRoot(t *testing.T) {
 
 func testMkdirAll_InvalidMode(t *testing.T, mkdirAll mkdirAllFunc) {
 	for _, test := range []struct {
-		mode        int
+		mode        FileMode
 		expectedErr error
 	}{
 		// os.FileMode bits are invalid.
-		{int(os.ModeDir | 0o777), errInvalidMode},
-		{int(os.ModeSticky | 0o777), errInvalidMode},
-		{int(os.ModeIrregular | 0o777), errInvalidMode},
+		{FileMode(os.ModeDir | 0o777), errInvalidMode},
+		{FileMode(os.ModeSticky | 0o777), errInvalidMode},
+		{FileMode(os.ModeIrregular | 0o777), errInvalidMode},
 		// unix.S_IFMT bits are also invalid.
 		{unix.S_IFDIR | 0o777, errInvalidMode},
 		{unix.S_IFREG | 0o777, errInvalidMode},
@@ -294,7 +294,7 @@ func newRacingMkdirMeta() *racingMkdirMeta {
 	}
 }
 
-func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode int, allowedErrs []error) {
+func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode FileMode, allowedErrs []error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err, "open root")
 	defer rootDir.Close()

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -492,6 +493,48 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) {
 					for err, count := range m.passErrCounts {
 						t.Logf("   %3.d: %v", count, err)
 					}
+				}
+			})
+		}
+	})
+}
+
+// Regression test for <https://github.com/opencontainers/runc/issues/4543>.
+func TestMkdirAllHandle_RacingCreate(t *testing.T) {
+	withWithoutOpenat2(t, false, func(t *testing.T) {
+		threadRanges := []int{2, 4, 8, 16, 32, 64, 128, 512, 1024}
+		for _, numThreads := range threadRanges {
+			numThreads := numThreads
+			t.Run(fmt.Sprintf("threads=%d", numThreads), func(t *testing.T) {
+				// Do several runs to try to catch bugs.
+				const testRuns = 500
+				m := newRacingMkdirMeta()
+				for i := 0; i < testRuns; i++ {
+					root := t.TempDir()
+					unsafePath := "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/x/y/z"
+
+					// Spawn many threads that will race against each other to
+					// create the same directory.
+					startCh := make(chan struct{})
+					var finishedWg sync.WaitGroup
+					for i := 0; i < numThreads; i++ {
+						finishedWg.Add(1)
+						go func() {
+							<-startCh
+							m.checkMkdirAllHandle_Racing(t, root, unsafePath, 0o711, nil)
+							finishedWg.Done()
+						}()
+					}
+
+					// Start all of the threads at the same time.
+					close(startCh)
+
+					// Wait for all of the racing threads to finish.
+					finishedWg.Wait()
+
+					// Clean up the root after each run so we don't exhaust all
+					// space in the tmpfs.
+					_ = os.RemoveAll(root)
 				}
 			})
 		}

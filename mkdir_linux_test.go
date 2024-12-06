@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -149,14 +150,14 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) {
 			"nondir-symlink-dotdot":   {unsafePath: "b-file/../d", expectedErr: unix.ENOTDIR},
 			"nondir-symlink-subdir":   {unsafePath: "b-file/subdir", expectedErr: unix.ENOTDIR},
 			// Dangling symlinks are not followed.
-			"dangling1-trailing": {unsafePath: "a-fake1", expectedErr: unix.EEXIST},
-			"dangling1-basic":    {unsafePath: "a-fake1/foo", expectedErr: unix.EEXIST},
+			"dangling1-trailing": {unsafePath: "a-fake1", expectedErr: unix.ENOTDIR},
+			"dangling1-basic":    {unsafePath: "a-fake1/foo", expectedErr: unix.ENOTDIR},
 			"dangling1-dotdot":   {unsafePath: "a-fake1/../bar/baz", expectedErr: unix.ENOENT},
-			"dangling2-trailing": {unsafePath: "a-fake2", expectedErr: unix.EEXIST},
-			"dangling2-basic":    {unsafePath: "a-fake2/foo", expectedErr: unix.EEXIST},
+			"dangling2-trailing": {unsafePath: "a-fake2", expectedErr: unix.ENOTDIR},
+			"dangling2-basic":    {unsafePath: "a-fake2/foo", expectedErr: unix.ENOTDIR},
 			"dangling2-dotdot":   {unsafePath: "a-fake2/../bar/baz", expectedErr: unix.ENOENT},
-			"dangling3-trailing": {unsafePath: "a-fake3", expectedErr: unix.EEXIST},
-			"dangling3-basic":    {unsafePath: "a-fake3/foo", expectedErr: unix.EEXIST},
+			"dangling3-trailing": {unsafePath: "a-fake3", expectedErr: unix.ENOTDIR},
+			"dangling3-basic":    {unsafePath: "a-fake3/foo", expectedErr: unix.ENOTDIR},
 			"dangling3-dotdot":   {unsafePath: "a-fake3/../bar/baz", expectedErr: unix.ENOENT},
 			// Non-lexical symlinks should work.
 			"nonlexical-basic":           {unsafePath: "target/foo"},
@@ -171,11 +172,11 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) {
 			"nonlexical-level3-abs":      {unsafePath: "link3/target_abs/foo"},
 			"nonlexical-level3-rel":      {unsafePath: "link3/target_rel/foo"},
 			// But really tricky dangling symlinks should fail.
-			"dangling-tricky1-trailing": {unsafePath: "link3/deep_dangling1", expectedErr: unix.EEXIST},
-			"dangling-tricky1-basic":    {unsafePath: "link3/deep_dangling1/foo", expectedErr: unix.EEXIST},
+			"dangling-tricky1-trailing": {unsafePath: "link3/deep_dangling1", expectedErr: unix.ENOTDIR},
+			"dangling-tricky1-basic":    {unsafePath: "link3/deep_dangling1/foo", expectedErr: unix.ENOTDIR},
 			"dangling-tricky1-dotdot":   {unsafePath: "link3/deep_dangling1/../bar", expectedErr: unix.ENOENT},
-			"dangling-tricky2-trailing": {unsafePath: "link3/deep_dangling2", expectedErr: unix.EEXIST},
-			"dangling-tricky2-basic":    {unsafePath: "link3/deep_dangling2/foo", expectedErr: unix.EEXIST},
+			"dangling-tricky2-trailing": {unsafePath: "link3/deep_dangling2", expectedErr: unix.ENOTDIR},
+			"dangling-tricky2-basic":    {unsafePath: "link3/deep_dangling2/foo", expectedErr: unix.ENOTDIR},
 			"dangling-tricky2-dotdot":   {unsafePath: "link3/deep_dangling2/../bar", expectedErr: unix.ENOENT},
 			// And trying to mkdir inside a loop should fail.
 			"loop-trailing": {unsafePath: "loop/link", expectedErr: unix.ELOOP},
@@ -348,7 +349,7 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) {
 			{"trailing", "target/a/b/c/d/e", "swapdir-nonempty1", "target/a/b/c/d/e", nil},
 			{"partial", "target/a/b/c/d/e", "swapdir-nonempty1", "target/a/b/c/d/e/f/g/h/i/j/k", nil},
 			{"trailing", "target/a/b/c/d/e", "swapdir-nonempty2", "target/a/b/c/d/e", nil},
-			{"partial", "target/a/b/c/d/e", "swapdir-nonempty2", "target/a/b/c/d/e/f/g/h/i/j/k", []error{unix.EEXIST}},
+			{"partial", "target/a/b/c/d/e", "swapdir-nonempty2", "target/a/b/c/d/e/f/g/h/i/j/k", []error{unix.ENOTDIR}},
 			{"trailing", "target/a/b/c/d/e", "swapfile", "target/a/b/c/d/e", []error{unix.ENOTDIR}},
 			{"partial", "target/a/b/c/d/e", "swapfile", "target/a/b/c/d/e/f/g/h/i/j/k", []error{unix.ENOTDIR}},
 		}
@@ -492,6 +493,48 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) {
 					for err, count := range m.passErrCounts {
 						t.Logf("   %3.d: %v", count, err)
 					}
+				}
+			})
+		}
+	})
+}
+
+// Regression test for <https://github.com/opencontainers/runc/issues/4543>.
+func TestMkdirAllHandle_RacingCreate(t *testing.T) {
+	withWithoutOpenat2(t, false, func(t *testing.T) {
+		threadRanges := []int{2, 4, 8, 16, 32, 64, 128, 512, 1024}
+		for _, numThreads := range threadRanges {
+			numThreads := numThreads
+			t.Run(fmt.Sprintf("threads=%d", numThreads), func(t *testing.T) {
+				// Do several runs to try to catch bugs.
+				const testRuns = 500
+				m := newRacingMkdirMeta()
+				for i := 0; i < testRuns; i++ {
+					root := t.TempDir()
+					unsafePath := "a/b/c/d/e/f/g/h/i/j/k/l/m/n/o/p/q/r/s/t/u/v/x/y/z"
+
+					// Spawn many threads that will race against each other to
+					// create the same directory.
+					startCh := make(chan struct{})
+					var finishedWg sync.WaitGroup
+					for i := 0; i < numThreads; i++ {
+						finishedWg.Add(1)
+						go func() {
+							<-startCh
+							m.checkMkdirAllHandle_Racing(t, root, unsafePath, 0o711, nil)
+							finishedWg.Done()
+						}()
+					}
+
+					// Start all of the threads at the same time.
+					close(startCh)
+
+					// Wait for all of the racing threads to finish.
+					finishedWg.Wait()
+
+					// Clean up the root after each run so we don't exhaust all
+					// space in the tmpfs.
+					_ = os.RemoveAll(root)
 				}
 			})
 		}

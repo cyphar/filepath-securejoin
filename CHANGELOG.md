@@ -5,6 +5,11 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
+### Fixed ###
+- `MkdirAll` will now no longer return an `EEXIST` error if two racing
+  processes are creating the same directory. We will still verify that the path
+  is a directory, but this will avoid spurious errors when multiple threads or
+  programs are trying to `MkdirAll` the same path. opencontainers/runc#4543
 
 ## [0.3.4] - 2024-10-09 ##
 

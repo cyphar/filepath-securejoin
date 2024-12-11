@@ -16,6 +16,8 @@ jobs:
       fail-fast: false
       matrix:
         go-version:
+          - "1.18"
+          - "1.20"
           - "1.21"
           - "1.22"
           - "^1"
@@ -26,6 +28,8 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - name: mkdir gocoverdir
+        # We can only use -test.gocoverdir for Go >= 1.20.
+        if: ${{ matrix.go-version != '1.18' && matrix.go-version != '1.19' }}
         run: |
           # mktemp --tmpdir -d gocoverdir.XXXXXXXX
           function New-TemporaryDirectory {
@@ -42,8 +46,15 @@ jobs:
           $GOCOVERDIR = (New-TemporaryDirectory -Prefix "gocoverdir")
           echo "GOCOVERDIR=$GOCOVERDIR" >>"$env:GITHUB_ENV"
       - name: unit tests
-        run: go test -v -cover '-test.gocoverdir' "$env:GOCOVERDIR" ./...
+        run: |
+          if (Test-Path 'env:GOCOVERDIR') {
+            go test -v -cover '-test.gocoverdir' "$env:GOCOVERDIR" ./...
+          } else {
+            go test -v ./...
+          }
       - name: upload coverage
+        # We can only use -test.gocoverdir for Go >= 1.20.
+        if: ${{ matrix.go-version != '1.18' && matrix.go-version != '1.19' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ runner.os }}-${{ github.job }}-${{ strategy.job-index }}
@@ -57,6 +68,8 @@ jobs:
           - ubuntu-latest
           - macos-latest
         go-version:
+          - "1.18"
+          - "1.20"
           - "1.21"
           - "1.22"
           - "^1"
@@ -67,14 +80,18 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
       - name: mkdir gocoverdir
+        # We can only use -test.gocoverdir for Go >= 1.20.
+        if: ${{ matrix.go-version != '1.18' && matrix.go-version != '1.19' }}
         run: |
           GOCOVERDIR="$(mktemp --tmpdir -d gocoverdir.XXXXXXXX)"
           echo "GOCOVERDIR=$GOCOVERDIR" >>"$GITHUB_ENV"
       - name: go test
-        run: go test -v -cover -timeout=30m -test.gocoverdir="$GOCOVERDIR" ./...
+        run: go test -v -timeout=30m ${GOCOVERDIR:+-cover -test.gocoverdir="$GOCOVERDIR"} ./...
       - name: sudo go test
-        run: sudo go test -v -cover -timeout=30m -test.gocoverdir="$GOCOVERDIR" ./...
+        run: sudo go test -v -timeout=30m ${GOCOVERDIR:+-cover -test.gocoverdir="$GOCOVERDIR"} ./...
       - name: upload coverage
+        # We can only use -test.gocoverdir for Go >= 1.20.
+        if: ${{ matrix.go-version != '1.18' && matrix.go-version != '1.19' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-${{ runner.os }}-${{ github.job }}-${{ strategy.job-index }}

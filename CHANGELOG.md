@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   library is probably better for most downstreams than a hand-rolled
   workaround, we now have compatibility shims that allow us to build on older
   Go versions.
+- Lower minimum version requirement for `golang.org/x/sys` to `v0.18.0` (we
+  need the wrappers for `fsconfig(2)`), which should also make backporting
+  patches to older branches easier.
 
 ## [0.3.5] - 2024-12-06 ##
 

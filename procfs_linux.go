@@ -296,12 +296,17 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 	return handle, runtime.UnlockOSThread, nil
 }
 
+// STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
+// avoid bumping the requirement for a single constant we can just define it
+// ourselves.
+const STATX_MNT_ID_UNIQUE = 0x4000
+
 var hasStatxMountId = sync_OnceValue(func() bool {
 	var (
 		stx unix.Statx_t
 		// We don't care which mount ID we get. The kernel will give us the
 		// unique one if it is supported.
-		wantStxMask uint32 = unix.STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
+		wantStxMask uint32 = STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
 	)
 	err := unix.Statx(-int(unix.EBADF), "/", 0, int(wantStxMask), &stx)
 	return err == nil && stx.Mask&wantStxMask != 0
@@ -317,7 +322,7 @@ func getMountId(dir *os.File, path string) (uint64, error) {
 		stx unix.Statx_t
 		// We don't care which mount ID we get. The kernel will give us the
 		// unique one if it is supported.
-		wantStxMask uint32 = unix.STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
+		wantStxMask uint32 = STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
 	)
 
 	err := unix.Statx(int(dir.Fd()), path, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW, int(wantStxMask), &stx)

@@ -6,7 +6,27 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Compatibility ###
+- The minimum Go version requirement for `filepath-securejoin` is now Go 1.18
+  (we use generics internally).
+
+  For reference, `filepath-securejoin@v0.3.0` somewhat-arbitrarily bumped the
+  Go version requirement to 1.21.
+
+  While we did make some use of Go 1.21 stdlib features (and in principle Go
+  versions <= 1.21 are no longer even supported by upstream anymore), some
+  downstreams have complained that the version bump has meant that they have to
+  do workarounds when backporting fixes that use the new `filepath-securejoin`
+  API onto old branches. This is not an ideal situation, but since using this
+  library is probably better for most downstreams than a hand-rolled
+  workaround, we now have compatibility shims that allow us to build on older
+  Go versions.
+- Lower minimum version requirement for `golang.org/x/sys` to `v0.18.0` (we
+  need the wrappers for `fsconfig(2)`), which should also make backporting
+  patches to older branches easier.
+
 ## [0.3.5] - 2024-12-06 ##
+
 ### Fixed ###
 - `MkdirAll` will now no longer return an `EEXIST` error if two racing
   processes are creating the same directory. We will still verify that the path

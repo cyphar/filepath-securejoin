@@ -8,7 +8,6 @@ package securejoin
 
 import (
 	"os"
-	"testing"
 )
 
 type forceGetProcRootLevel int
@@ -33,17 +32,17 @@ func testingCheckClose(check bool, f *os.File) bool {
 }
 
 func testingForcePrivateProcRootOpenTree(f *os.File) bool {
-	return testing.Testing() && testingForceGetProcRoot != nil &&
+	return testingForceGetProcRoot != nil &&
 		testingCheckClose(*testingForceGetProcRoot >= forceGetProcRootOpenTree, f)
 }
 
 func testingForcePrivateProcRootOpenTreeAtRecursive(f *os.File) bool {
-	return testing.Testing() && testingForceGetProcRoot != nil &&
+	return testingForceGetProcRoot != nil &&
 		testingCheckClose(*testingForceGetProcRoot >= forceGetProcRootOpenTreeAtRecursive, f)
 }
 
 func testingForceGetProcRootUnsafe() bool {
-	return testing.Testing() && testingForceGetProcRoot != nil &&
+	return testingForceGetProcRoot != nil &&
 		*testingForceGetProcRoot >= forceGetProcRootUnsafe
 }
 
@@ -58,12 +57,12 @@ const (
 var testingForceProcThreadSelf *forceProcThreadSelfLevel
 
 func testingForceProcSelfTask() bool {
-	return testing.Testing() && testingForceProcThreadSelf != nil &&
+	return testingForceProcThreadSelf != nil &&
 		*testingForceProcThreadSelf >= forceProcSelfTask
 }
 
 func testingForceProcSelf() bool {
-	return testing.Testing() && testingForceProcThreadSelf != nil &&
+	return testingForceProcThreadSelf != nil &&
 		*testingForceProcThreadSelf >= forceProcSelf
 }
 

@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+## [0.3.6] - 2024-12-17 ##
+
 ### Compatibility ###
 - The minimum Go version requirement for `filepath-securejoin` is now Go 1.18
   (we use generics internally).
@@ -191,7 +193,8 @@ This is our first release of `github.com/cyphar/filepath-securejoin`,
 containing a full implementation with a coverage of 93.5% (the only missing
 cases are the error cases, which are hard to mocktest at the moment).
 
-[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.2...v0.3.3

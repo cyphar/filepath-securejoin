@@ -390,3 +390,10 @@ func TestSecureJoinVFSErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestUncleanRoot(t *testing.T) {
+	safePath, err := SecureJoin("/foo/..", "bar/baz")
+	if !errors.Is(err, errUncleanRoot) {
+		t.Errorf("SecureJoin with non-clean path should return errUncleanRoot, instead got (%q, %v)", safePath, err)
+	}
+}

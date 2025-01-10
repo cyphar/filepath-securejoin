@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Breaking ####
+- `SecureJoin(VFS)` will now return an error if the provided `root` is not a
+  `filepath.Clean`'d path.
+
+  While it is ultimately the responsibility of the caller to ensure the root is
+  a safe path to use, passing a path like `/symlink/..` as a root would result
+  in the `SecureJoin`'d path being placed in `/` even though `/symlink/..`
+  might be a different directory, and so we should more strongly discourage
+  such usage.
+
+  All major users of `securejoin.SecureJoin` already ensure that the paths they
+  provide are safe (and this is ultimately a question of user error), but
+  removing this foot-gun is probably a good idea. Of course, this is
+  necessarily a breaking API change (though we expect no real users to be
+  affected by it).
+
 ## [0.3.6] - 2024-12-17 ##
 
 ### Compatibility ###

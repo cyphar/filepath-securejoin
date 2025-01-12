@@ -20,14 +20,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode int) error
+type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode os.FileMode) error
 
-var mkdirAll_MkdirAll mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode int) error {
+var mkdirAll_MkdirAll mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode os.FileMode) error {
 	// We can't check expectedPath here.
 	return MkdirAll(root, unsafePath, mode)
 }
 
-var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode int) error {
+var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode os.FileMode) error {
 	// Same logic as MkdirAll.
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -55,7 +55,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	return nil
 }
 
-func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string, mode, expectedMode int, expectedErr error) {
+func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string, mode os.FileMode, expectedMode int, expectedErr error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
 	defer rootDir.Close()
@@ -248,31 +248,36 @@ func TestMkdirAllHandle_AsRoot(t *testing.T) {
 
 func testMkdirAll_InvalidMode(t *testing.T, mkdirAll mkdirAllFunc) {
 	for _, test := range []struct {
-		mode        int
+		mode        os.FileMode
 		expectedErr error
 	}{
-		// os.FileMode bits are invalid.
-		{int(os.ModeDir | 0o777), errInvalidMode},
-		{int(os.ModeSticky | 0o777), errInvalidMode},
-		{int(os.ModeIrregular | 0o777), errInvalidMode},
+		// unix.S_IS* bits are invalid.
+		{unix.S_ISUID | 0o777, errInvalidMode},
+		{unix.S_ISGID | 0o777, errInvalidMode},
+		{unix.S_ISVTX | 0o777, errInvalidMode},
+		{unix.S_ISUID | unix.S_ISGID | unix.S_ISVTX | 0o777, errInvalidMode},
 		// unix.S_IFMT bits are also invalid.
 		{unix.S_IFDIR | 0o777, errInvalidMode},
 		{unix.S_IFREG | 0o777, errInvalidMode},
 		{unix.S_IFIFO | 0o777, errInvalidMode},
+		// os.FileType bits are also invalid.
+		{os.ModeDir | 0o777, errInvalidMode},
+		{os.ModeNamedPipe | 0o777, errInvalidMode},
+		{os.ModeIrregular | 0o777, errInvalidMode},
 		// suid/sgid bits are silently ignored by mkdirat and so we return an
 		// error explicitly.
-		{unix.S_ISUID | 0o777, errInvalidMode},
-		{unix.S_ISGID | 0o777, errInvalidMode},
-		{unix.S_ISUID | unix.S_ISGID | unix.S_ISVTX | 0o777, errInvalidMode},
+		{os.ModeSetuid | 0o777, errInvalidMode},
+		{os.ModeSetgid | 0o777, errInvalidMode},
+		{os.ModeSetuid | os.ModeSetgid | os.ModeSticky | 0o777, errInvalidMode},
 		// Proper sticky bit should work.
-		{unix.S_ISVTX | 0o777, nil},
+		{os.ModeSticky | 0o777, nil},
 		// Regular mode bits.
 		{0o777, nil},
 		{0o711, nil},
 	} {
 		root := t.TempDir()
 		err := mkdirAll(t, root, "a/b/c", test.mode)
-		assert.ErrorIsf(t, err, test.expectedErr, "mkdirall 0o%.3o", test.mode)
+		assert.ErrorIsf(t, err, test.expectedErr, "mkdirall %+.3o (%s)", test.mode, test.mode)
 	}
 }
 
@@ -295,7 +300,7 @@ func newRacingMkdirMeta() *racingMkdirMeta {
 	}
 }
 
-func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode int, allowedErrs []error) {
+func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode os.FileMode, allowedErrs []error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err, "open root")
 	defer rootDir.Close()

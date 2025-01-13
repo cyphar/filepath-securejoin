@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+## [0.4.0] - 2025-01-13 ##
+
 ### Breaking ####
 - `SecureJoin(VFS)` will now return an error if the provided `root` is not a
   `filepath.Clean`'d path.
@@ -21,6 +23,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   removing this foot-gun is probably a good idea. Of course, this is
   necessarily a breaking API change (though we expect no real users to be
   affected by it).
+
+  Thanks to [Erik Sjölund](https://github.com/eriksjolund), who initially
+  reported this issue as a possible security issue.
 
 - `MkdirAll` and `MkdirHandle` now take an `os.FileMode`-style mode argument
   instead of a raw `unix.S_*`-style mode argument, which may cause compile-time
@@ -223,7 +228,8 @@ This is our first release of `github.com/cyphar/filepath-securejoin`,
 containing a full implementation with a coverage of 93.5% (the only missing
 cases are the error cases, which are hard to mocktest at the moment).
 
-[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.6...v0.4.0
 [0.3.6]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.3...v0.3.4

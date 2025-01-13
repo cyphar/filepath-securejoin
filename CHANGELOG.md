@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   necessarily a breaking API change (though we expect no real users to be
   affected by it).
 
+- `MkdirAll` and `MkdirHandle` now take an `os.FileMode`-style mode argument
+  instead of a raw `unix.S_*`-style mode argument, which may cause compile-time
+  type errors depending on how you use `filepath-securejoin`. For most users,
+  there will be no change in behaviour aside from the type change (as the
+  bottom `0o777` bits are the same in both formats, and most users are probably
+  only using those bits).
+
+  However, if you were using `unix.S_ISVTX` to set the sticky bit with
+  `MkdirAll(Handle)` you will need to switch to `os.ModeSticky` otherwise you
+  will get a runtime error with this update. In addition, the error message you
+  will get from passing `unix.S_ISUID` and `unix.S_ISGID` will be different as
+  they are treated as invalid bits now (note that previously passing said bits
+  was also an error).
+
 ## [0.3.6] - 2024-12-17 ##
 
 ### Compatibility ###

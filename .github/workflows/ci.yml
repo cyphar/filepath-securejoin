@@ -19,6 +19,8 @@ jobs:
           - windows-latest
           - ubuntu-latest
           - macos-latest
+        go-arch:
+          - amd64
         go-version:
           - "1.18"
           - "1.19"
@@ -27,6 +29,10 @@ jobs:
           - "1.22"
           - "1.23"
           - "^1"
+        include:
+          - os: ubuntu-latest
+            go-arch: "386"
+            go-version: "^1"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +40,8 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           check-latest: true
+      - name: set GOOARCH
+        run: echo "GOARCH=${{ matrix.go-arch }}" >>"$GITHUB_ENV"
       - name: go build check
         run: go build ./...
       - name: go test build check

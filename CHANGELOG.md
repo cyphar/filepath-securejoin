@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Fixed ###
+- The restrictions added for `root` paths passed to `SecureJoin` in 0.4.0 was
+  found to be too strict and caused some regressions when folks tried to
+  update, so this restriction has been relaxed to only return an error if the
+  path contains a `..` component. We still recommend users use `filepath.Clean`
+  (and even `filepath.EvalSymlinks`) on the `root` path they are using, but at
+  least you will no longer be punished for "trivial" unclean paths.
+
 ## [0.4.0] - 2025-01-13 ##
 
 ### Breaking ####

@@ -69,7 +69,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 		//       nd_jump_link() so RESOLVE_NO_MAGICLINKS allows it.
 		//
 		// NOTE: We MUST NOT use RESOLVE_IN_ROOT here, as openat2File uses
-		//       procSelfFdReadlink to clean up the returned f.Name() if we use
+		//       ProcSelfFdReadlink to clean up the returned f.Name() if we use
 		//       RESOLVE_IN_ROOT (which would lead to an infinite recursion).
 		//
 		// TODO: It would be nice to have RESOLVE_NO_DOTDOT, purely for

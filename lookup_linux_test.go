@@ -52,7 +52,7 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 	assert.Equal(t, expected.remainingPath, remainingPath, "remaining path")
 
 	// Check the handle path.
-	gotPath, err := procSelfFdReadlink(handle)
+	gotPath, err := ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expected.handlePath, gotPath, "real handle path")
 	// Make sure the handle matches the readlink path.
@@ -371,9 +371,9 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 	if handle != nil {
 		handleName = handle.Name()
 
-		// Get the "proper" name from procSelfFdReadlink.
+		// Get the "proper" name from ProcSelfFdReadlink.
 		m.pauseCh <- struct{}{}
-		realPath, err = procSelfFdReadlink(handle)
+		realPath, err = ProcSelfFdReadlink(handle)
 		<-m.pauseCh
 		require.NoError(t, err, "get real path of returned handle")
 

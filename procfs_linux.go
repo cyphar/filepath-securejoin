@@ -210,24 +210,30 @@ var hasProcThreadSelf = sync_OnceValue(func() bool {
 
 var errUnsafeProcfs = errors.New("unsafe procfs detected")
 
-type procThreadSelfCloser func()
+// ProcThreadSelfCloser is a callback that needs to be called when you are done
+// operating on an [os.File] fetched using [ProcThreadSelf].
+//
+// [os.File]: https://pkg.go.dev/os#File
+type ProcThreadSelfCloser func()
 
-// procThreadSelf returns a handle to /proc/thread-self/<subpath> (or an
-// equivalent handle on older kernels where /proc/thread-self doesn't exist).
-// Once finished with the handle, you must call the returned closer function
-// (runtime.UnlockOSThread). You must not pass the returned *os.File to other
-// Go threads or use the handle after calling the closer.
-//
-// This is similar to ProcThreadSelf from runc, but with extra hardening
-// applied and using *os.File.
-//
 // NOTE: THIS IS NOT YET SAFE TO EXPORT. The non-openat2(2) case is just using
 // a plain openat(2), which is not entirely safe against overmount attacks.
 // Yes, if we are using fsopen(2) or open_tree(2) (without AT_RECURSIVE), then
 // this is safe, but we shouldn't make less privileged users (or users on older
 // kernels) incorrectly assume this is safe. libpathrs does it correctly, and
 // it's best to leave it to them.
-func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
+func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThreadSelfCloser, Err error) {
+	// If called from the external API, procRoot will be nil, so just get the
+	// global root handle. It's also possible one of our tests calls this with
+	// nil by accident, so we should handle the case anyway.
+	if procRoot == nil {
+		root, err := getProcRoot()
+		if err != nil {
+			return nil, nil, err
+		}
+		procRoot = root
+	}
+
 	// We need to lock our thread until the caller is done with the handle
 	// because between getting the handle and using it we could get interrupted
 	// by the Go runtime and hit the case where the underlying thread is
@@ -265,6 +271,18 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 		return nil, nil, wrapBaseError(err, errUnsafeProcfs)
 	}
 	return handle, runtime.UnlockOSThread, nil
+}
+
+// ProcThreadSelf returns a handle to /proc/thread-self/<subpath> (or an
+// equivalent handle on older kernels where /proc/thread-self doesn't exist).
+// Once finished with the handle, you must call the returned closer function
+// (runtime.UnlockOSThread). You must not pass the returned *os.File to other
+// Go threads or use the handle after calling the closer.
+//
+// This is similar to ProcThreadSelf from runc, but with extra hardening
+// applied and using *os.File.
+func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
+	return procThreadSelf(nil, subpath)
 }
 
 // STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
@@ -372,7 +390,10 @@ func rawProcSelfFdReadlink(fd int) (string, error) {
 	return doRawProcSelfFdReadlink(procRoot, fd)
 }
 
-func procSelfFdReadlink(f *os.File) (string, error) {
+// ProcSelfFdReadlink gets the real path of the given file by looking at
+// readlink(/proc/thread-self/fd/$n), with the same safety protections as
+// [ProcThreadSelf] (as well as some additional checks against overmounts).
+func ProcSelfFdReadlink(f *os.File) (string, error) {
 	return rawProcSelfFdReadlink(int(f.Fd()))
 }
 
@@ -404,7 +425,7 @@ func checkProcSelfFdPath(path string, file *os.File) error {
 	if err := isDeadInode(file); err != nil {
 		return err
 	}
-	actualPath, err := procSelfFdReadlink(file)
+	actualPath, err := ProcSelfFdReadlink(file)
 	if err != nil {
 		return fmt.Errorf("get path of handle: %w", err)
 	}

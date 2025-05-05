@@ -367,13 +367,12 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 	defer procFdLink.Close() //nolint:errcheck // close failures aren't critical here
 	defer closer()
 
-	// Try to detect if there is a mount on top of the magic-link. Since we use the handle directly
-	// provide to the closure. If the closure uses the handle directly, this
-	// should be safe in general (a mount on top of the path afterwards would
-	// not affect the handle itself) and will definitely be safe if we are
-	// using privateProcRoot() (at least since Linux 5.12[1], when anonymous
-	// mount namespaces were completely isolated from external mounts including
-	// mount propagation events).
+	// Try to detect if there is a mount on top of the magic-link. This should
+	// be safe in general (a mount on top of the path afterwards would not
+	// affect the handle itself) and will definitely be safe if we are using
+	// privateProcRoot() (at least since Linux 5.12[1], when anonymous mount
+	// namespaces were completely isolated from external mounts including mount
+	// propagation events).
 	//
 	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
 	// onto targets that reside on shared mounts").

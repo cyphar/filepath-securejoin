@@ -62,13 +62,13 @@ func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 	require.NoError(t, err)
 
 	// Get the original handle path.
-	handlePath, err := procSelfFdReadlink(handle)
+	handlePath, err := ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of original handle")
 	// Make sure the handle matches the readlink path.
 	assert.Equal(t, handlePath, handle.Name(), "handle.Name() matching real original handle path")
 
 	// Check that the new and old handle have the same path.
-	newHandlePath, err := procSelfFdReadlink(newHandle)
+	newHandlePath, err := ProcSelfFdReadlink(newHandle)
 	require.NoError(t, err, "get real path of reopened handle")
 	assert.Equal(t, handlePath, newHandlePath, "old and reopen handle paths")
 	assert.Equal(t, handle.Name(), newHandle.Name(), "old and reopen handle.Name()")
@@ -102,7 +102,7 @@ func checkOpenInRoot(t *testing.T, openInRootFn openInRootFunc, root, unsafePath
 	require.NoError(t, err)
 
 	// Check the handle path.
-	gotPath, err := procSelfFdReadlink(handle)
+	gotPath, err := ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expected.handlePath, gotPath, "real handle path")
 	// Make sure the handle matches the readlink path.

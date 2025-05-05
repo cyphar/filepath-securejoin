@@ -77,8 +77,15 @@ func setupMountNamespace(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func doProcThreadSelf(procRoot *os.File, subpath string) (*os.File, ProcThreadSelfCloser, error) {
+	if procRoot != nil {
+		return procThreadSelf(procRoot, subpath)
+	}
+	return ProcThreadSelf(subpath)
+}
+
 func testProcThreadSelf(t *testing.T, procRoot *os.File, subpath string, expectErr bool) {
-	handle, closer, err := procThreadSelf(procRoot, subpath)
+	handle, closer, err := doProcThreadSelf(procRoot, subpath)
 	if expectErr {
 		assert.ErrorIsf(t, err, errUnsafeProcfs, "should have detected /proc/thread-self/%s overmount", subpath)
 	} else if assert.NoErrorf(t, err, "/proc/thread-self/%s open should succeed", subpath) {
@@ -127,7 +134,9 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 
 		procRoot, err := procRootFn()
 		require.NoError(t, err)
-		defer procRoot.Close() //nolint:errcheck // test code
+		if procRoot != nil {
+			defer procRoot.Close() //nolint:errcheck // test code
+		}
 
 		// We expect to always detect tmpfs overmounts if we have a /proc with
 		// overmounts.
@@ -144,7 +153,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 			symlinkOvermountErr = nil
 		}
 
-		procSelf, closer, err := procThreadSelf(procRoot, ".")
+		procSelf, closer, err := doProcThreadSelf(procRoot, ".")
 		require.NoError(t, err)
 		defer procSelf.Close() //nolint:errcheck // test code
 		defer closer()
@@ -224,6 +233,17 @@ func TestProcOvermountSubdir_doGetProcRoot_Mocked(t *testing.T) {
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
 			testProcOvermountSubdir(t, doGetProcRoot, expectOvermounts)
+		})
+	})
+}
+
+func TestProcOvermountSubdir_ProcThreadSelf(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
+			testForceProcThreadSelf(t, func(t *testing.T) {
+				dummyGetRoot := func() (*os.File, error) { return nil, nil } //nolint:nilnil // intentional
+				testProcOvermountSubdir(t, dummyGetRoot, expectOvermounts)
+			})
 		})
 	})
 }

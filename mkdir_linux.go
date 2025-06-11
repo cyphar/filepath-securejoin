@@ -113,7 +113,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 		return nil, fmt.Errorf("cannot create subdirectories in %q: %w", currentDir.Name(), unix.ENOTDIR)
 	} else if err != nil {
 		return nil, fmt.Errorf("re-opening handle to %q: %w", currentDir.Name(), err)
-	} else {
+	} else { //nolint:revive // indent-error-flow lint doesn't make sense here
 		_ = currentDir.Close()
 		currentDir = reopenDir
 	}

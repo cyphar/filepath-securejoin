@@ -286,8 +286,8 @@ func TestSecureJoinVFSErrors(t *testing.T) {
 	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "link"))
 
 	// Define some fake mock functions.
-	lstatFailFn := func(path string) (os.FileInfo, error) { return nil, lstatErr }
-	readlinkFailFn := func(path string) (string, error) { return "", readlinkErr }
+	lstatFailFn := func(string) (os.FileInfo, error) { return nil, lstatErr }
+	readlinkFailFn := func(string) (string, error) { return "", readlinkErr }
 
 	// Make sure that the set of {lstat, readlink} failures do propagate.
 	for idx, test := range []struct {

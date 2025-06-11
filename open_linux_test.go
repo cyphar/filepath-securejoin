@@ -29,7 +29,7 @@ type openResult struct {
 // 64-bit machines. Unfortunately, it is architecture-dependent and
 // unix.O_LARGEFILE is 0 (presumably to avoid users setting it). So we need to
 // initialise it at init.
-var O_LARGEFILE = 0x8000
+var O_LARGEFILE = 0x8000 //nolint:revive // unix.* name
 
 func init() {
 	switch runtime.GOARCH {
@@ -372,7 +372,7 @@ func TestOpenInRootHandle(t *testing.T) {
 	})
 }
 
-func TestOpenInRoot_BadInode(t *testing.T) {
+func TestOpenInRoot_BadInode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	requireRoot(t) // mknod
 
 	withWithoutOpenat2(t, true, func(t *testing.T) {

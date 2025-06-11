@@ -187,7 +187,7 @@ func TestProcOvermountSubdir_unsafeHostProcRoot(t *testing.T) {
 }
 
 func TestProcOvermountSubdir_newPrivateProcMount(t *testing.T) {
-	if !hasNewMountApi() {
+	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
 	withWithoutOpenat2(t, true, func(t *testing.T) {
@@ -197,7 +197,7 @@ func TestProcOvermountSubdir_newPrivateProcMount(t *testing.T) {
 }
 
 func TestProcOvermountSubdir_clonePrivateProcMount(t *testing.T) {
-	if !hasNewMountApi() {
+	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
 	withWithoutOpenat2(t, true, func(t *testing.T) {
@@ -213,12 +213,12 @@ func TestProcOvermountSubdir_doGetProcRoot(t *testing.T) {
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
-		testProcOvermountSubdir(t, doGetProcRoot, !hasNewMountApi())
+		testProcOvermountSubdir(t, doGetProcRoot, !hasNewMountAPI())
 	})
 }
 
 func TestProcOvermountSubdir_doGetProcRoot_Mocked(t *testing.T) {
-	if !hasNewMountApi() {
+	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
 	withWithoutOpenat2(t, true, func(t *testing.T) {
@@ -274,14 +274,14 @@ func TestProcOvermount_unsafeHostProcRoot(t *testing.T) {
 }
 
 func TestProcOvermount_clonePrivateProcMount(t *testing.T) {
-	if !hasNewMountApi() {
+	if !hasNewMountAPI() {
 		t.Skip("test requires open_tree support")
 	}
 	testProcOvermount(t, clonePrivateProcMount, false)
 }
 
 func TestProcOvermount_newPrivateProcMount(t *testing.T) {
-	if !hasNewMountApi() || !canFsOpen() {
+	if !hasNewMountAPI() || !canFsOpen() {
 		t.Skip("test requires fsopen support")
 	}
 	testProcOvermount(t, newPrivateProcMount, true)
@@ -293,10 +293,10 @@ func TestProcOvermount_doGetProcRoot(t *testing.T) {
 }
 
 func TestProcOvermount_doGetProcRoot_Mocked(t *testing.T) {
-	if !hasNewMountApi() {
+	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
+	testForceGetProcRoot(t, func(t *testing.T, _ bool) {
 		privateProcMount := canFsOpen() && !testingForcePrivateProcRootOpenTree(nil)
 		testProcOvermount(t, doGetProcRoot, privateProcMount)
 	})

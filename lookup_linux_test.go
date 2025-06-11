@@ -595,7 +595,7 @@ type ssOperation interface {
 
 type ssOpPop struct{ part string }
 
-func (op ssOpPop) Do(t *testing.T, s *symlinkStack) error { return s.PopPart(op.part) }
+func (op ssOpPop) Do(_ *testing.T, s *symlinkStack) error { return s.PopPart(op.part) }
 
 func (op ssOpPop) String() string { return fmt.Sprintf("PopPart(%q)", op.part) }
 

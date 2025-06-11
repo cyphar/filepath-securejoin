@@ -78,7 +78,7 @@ func hasDotDot(path string) bool {
 // fully resolved using [filepath.EvalSymlinks] or otherwise constructed to
 // avoid containing symlink components. Of course, the root also *must not* be
 // attacker-controlled.
-func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) {
+func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) { //nolint:revive // name is part of public API
 	// The root path must not contain ".." components, otherwise when we join
 	// the subpath we will end up with a weird path. We could work around this
 	// in other ways but users shouldn't be giving us non-lexical root paths in

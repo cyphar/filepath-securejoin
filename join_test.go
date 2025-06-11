@@ -327,7 +327,7 @@ func TestSecureJoinVFSErrors(t *testing.T) {
 
 		success := false
 		for _, exp := range test.expected {
-			if err == exp {
+			if errors.Is(err, exp) {
 				success = true
 			}
 		}

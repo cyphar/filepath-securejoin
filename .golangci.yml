@@ -45,3 +45,12 @@ linters:
     govet:
       enable:
         - nilness
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/cyphar/filepath-securejoin

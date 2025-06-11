@@ -116,8 +116,8 @@ func TestNoSymlink(t *testing.T) {
 func TestNonLexical(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0755)
-	mkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0755)
+	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
+	mkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0o755)
 	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
 	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
 	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
@@ -149,7 +149,7 @@ func TestNonLexical(t *testing.T) {
 func TestSymlinkLoop(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0755)
+	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
 	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "subdir", "link"))
 	symlink(t, "/subdir/link", filepath.Join(dir, "path"))
 	symlink(t, "/../../../../../../../../../../../../../../../../self", filepath.Join(dir, "self"))
@@ -179,8 +179,8 @@ func TestSymlinkLoop(t *testing.T) {
 func TestEnotdir(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0755)
-	writeFile(t, filepath.Join(dir, "notdir"), []byte("I am not a directory!"), 0755)
+	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
+	writeFile(t, filepath.Join(dir, "notdir"), []byte("I am not a directory!"), 0o755)
 	symlink(t, "/../../../notdir/somechild", filepath.Join(dir, "subdir", "link"))
 
 	for _, test := range []struct {
@@ -234,8 +234,8 @@ func (m mockVFS) Readlink(path string) (string, error)   { return m.readlink(pat
 func TestSecureJoinVFS(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0755)
-	mkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0755)
+	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
+	mkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0o755)
 	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
 	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
 	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))

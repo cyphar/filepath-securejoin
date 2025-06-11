@@ -587,7 +587,6 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 				}
 			})
 		}
-
 	})
 }
 
@@ -779,21 +778,21 @@ func TestSymlinkStackTailChain(t *testing.T) {
 	// Basic expected contents.
 	initialState := []expectedStackEntry{
 		// Top entry is not a tail-chain.
-		expectedStackEntry{"A", []string{"subdir1"}},
+		{"A", []string{"subdir1"}},
 		// The first tail-chain should have no unwalked links.
-		expectedStackEntry{"B", nil},
-		expectedStackEntry{"C", nil},
-		expectedStackEntry{"D", nil},
+		{"B", nil},
+		{"C", nil},
+		{"D", nil},
 		// Final entry in the first tail-chain.
-		expectedStackEntry{"E", []string{"subdir2"}},
+		{"E", []string{"subdir2"}},
 		// The second tail-chain should have no unwalked links.
-		expectedStackEntry{"F", nil},
-		expectedStackEntry{"G", nil},
-		expectedStackEntry{"H", nil},
-		expectedStackEntry{"I", nil},
-		expectedStackEntry{"J", nil},
+		{"F", nil},
+		{"G", nil},
+		{"H", nil},
+		{"I", nil},
+		{"J", nil},
 		// Final entry in the second tail-chain.
-		expectedStackEntry{"K", []string{"taillink2", ".."}},
+		{"K", []string{"taillink2", ".."}},
 	}
 
 	testStackContents(t, "initial state", ss, initialState...)

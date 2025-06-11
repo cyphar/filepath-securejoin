@@ -267,7 +267,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 			// TODO: Once we bump the minimum Go version to 1.20, we can use
 			// multiple %w verbs for this wrapping. For now we need to use a
 			// compatibility shim for older Go versions.
-			//err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
 			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
 		}
 	} else {
@@ -276,7 +276,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 			// TODO: Once we bump the minimum Go version to 1.20, we can use
 			// multiple %w verbs for this wrapping. For now we need to use a
 			// compatibility shim for older Go versions.
-			//err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
 			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
 		}
 		defer func() {

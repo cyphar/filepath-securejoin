@@ -154,7 +154,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 				// TODO: Once we bump the minimum Go version to 1.20, we can use
 				// multiple %w verbs for this wrapping. For now we need to use a
 				// compatibility shim for older Go versions.
-				//err = fmt.Errorf("%w (%w)", err, deadErr)
+				// err = fmt.Errorf("%w (%w)", err, deadErr)
 				err = wrapBaseError(err, deadErr)
 			}
 			return nil, err

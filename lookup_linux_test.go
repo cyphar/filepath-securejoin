@@ -30,7 +30,7 @@ type lookupResult struct {
 func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir *os.File, unsafePath string, expected lookupResult) {
 	handle, remainingPath, err := partialLookupFn(rootDir, unsafePath)
 	if handle != nil {
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 	}
 	if expected.err != nil {
 		if assert.Error(t, err) {
@@ -143,7 +143,7 @@ func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {
 
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // test code
 
 	for name, test := range map[string]struct {
 		unsafePath string
@@ -318,7 +318,7 @@ func TestPartialLookupInRoot_BadInode(t *testing.T) {
 
 		rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
-		defer rootDir.Close()
+		defer rootDir.Close() //nolint:errcheck // test code
 
 		for name, test := range map[string]struct {
 			unsafePath string
@@ -543,7 +543,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 
 				rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 				require.NoError(t, err)
-				defer rootDir.Close()
+				defer rootDir.Close() //nolint:errcheck // test code
 
 				// If the swapping subpaths are "." we need to use an absolute
 				// path because renaming "." isn't allowed.
@@ -659,7 +659,7 @@ func TestSymlinkStackBasic(t *testing.T) {
 		ssOp{op: ssOpPop{"taillink"}},
 		ssOp{op: ssOpPop{"anotherbit"}},
 	)
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 
 	if !assert.True(t, ss.IsEmpty()) {
 		dumpStack(t, ss)
@@ -677,7 +677,7 @@ func TestSymlinkStackBadPop(t *testing.T) {
 		ssOp{op: ssOpSwapLink{"abcd", "D", "", ""}}, // TODO: This is technically an invalid thing to push.
 		ssOp{op: ssOpSwapLink{"another", "E", "", ""}, expectedErr: errBrokenSymlinkStack},
 	)
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 }
 
 type expectedStackEntry struct {
@@ -722,7 +722,7 @@ func TestSymlinkStackBasicTailChain(t *testing.T) {
 			dumpStack(t, ss)
 		}
 	}()
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 
 	// Basic expected contents.
 	testStackContents(t, "initial state", ss,
@@ -774,7 +774,7 @@ func TestSymlinkStackTailChain(t *testing.T) {
 			dumpStack(t, ss)
 		}
 	}()
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 
 	// Basic expected contents.
 	initialState := []expectedStackEntry{

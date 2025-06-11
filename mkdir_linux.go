@@ -225,7 +225,7 @@ func MkdirAll(root, unsafePath string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // close failures aren't critical here
 
 	f, err := MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {

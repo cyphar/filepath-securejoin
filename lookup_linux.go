@@ -272,8 +272,8 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 
 		// Try to open the next component.
 		nextDir, err := openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-		switch {
-		case err == nil:
+		switch err {
+		case nil:
 			st, err := nextDir.Stat()
 			if err != nil {
 				_ = nextDir.Close()

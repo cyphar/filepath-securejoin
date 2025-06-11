@@ -49,7 +49,7 @@ func init() {
 func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 	newHandle, err := Reopen(handle, flags)
 	if newHandle != nil {
-		defer newHandle.Close()
+		defer newHandle.Close() //nolint:errcheck // test code
 	}
 	if expectedErr != nil {
 		if assert.Error(t, err) {
@@ -89,7 +89,7 @@ func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 func checkOpenInRoot(t *testing.T, openInRootFn openInRootFunc, root, unsafePath string, expected openResult) {
 	handle, err := openInRootFn(root, unsafePath)
 	if handle != nil {
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 	}
 	if expected.err != nil {
 		if assert.Error(t, err) {
@@ -365,7 +365,7 @@ func TestOpenInRootHandle(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			defer rootDir.Close()
+			defer rootDir.Close() //nolint:errcheck // test code
 
 			return OpenatInRoot(rootDir, unsafePath)
 		})
@@ -387,7 +387,7 @@ func TestOpenInRoot_BadInode(t *testing.T) {
 
 		rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
-		defer rootDir.Close()
+		defer rootDir.Close() //nolint:errcheck // test code
 
 		for name, test := range map[string]struct {
 			unsafePath string

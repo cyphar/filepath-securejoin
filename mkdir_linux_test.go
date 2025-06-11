@@ -33,12 +33,12 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	if err != nil {
 		return err
 	}
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // test code
 	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {
 		return err
 	}
-	defer handle.Close()
+	defer handle.Close() //nolint:errcheck // test code
 
 	// We can use SecureJoin here because we aren't being attacked in this
 	// particular test. Obviously this check is bogus for actual programs.
@@ -58,7 +58,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string, mode os.FileMode, expectedMode int, expectedErr error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // test code
 
 	// Before trying to make the tree, figure out what components don't exist
 	// yet so we can check them later.
@@ -66,7 +66,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 	handleName := "<nil>"
 	if handle != nil {
 		handleName = handle.Name()
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 	}
 	defer func() {
 		if t.Failed() {
@@ -303,7 +303,7 @@ func newRacingMkdirMeta() *racingMkdirMeta {
 func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode os.FileMode, allowedErrs []error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err, "open root")
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // test code
 
 	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {
@@ -318,7 +318,7 @@ func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafeP
 		m.failCount++
 		return
 	}
-	defer handle.Close()
+	defer handle.Close() //nolint:errcheck // test code
 
 	// It's possible for an attacker to have swapped the final directory, but
 	// this is okay because MkdirAll will use pre-existing directories anyway.

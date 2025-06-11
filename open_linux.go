@@ -45,7 +45,7 @@ func OpenInRoot(root, unsafePath string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // close failures aren't critical here
 	return OpenatInRoot(rootDir, unsafePath)
 }
 
@@ -75,7 +75,7 @@ func Reopen(handle *os.File, flags int) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get safe /proc/thread-self/fd handle: %w", err)
 	}
-	defer procFdDir.Close()
+	defer procFdDir.Close() //nolint:errcheck // close failures aren't critical here
 	defer closer()
 
 	// Try to detect if there is a mount on top of the magic-link we are about

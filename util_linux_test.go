@@ -142,8 +142,7 @@ func createInTree(t *testing.T, root, spec string) {
 		if len(f) >= 1 {
 			setOwnerMode = &f[0]
 		}
-		err := os.MkdirAll(fullPath, 0o755)
-		require.NoError(t, err)
+		mkdirAll(t, fullPath, 0o755)
 	case "file":
 		var contents []byte
 		if len(f) >= 1 {
@@ -152,15 +151,13 @@ func createInTree(t *testing.T, root, spec string) {
 		if len(f) >= 2 {
 			setOwnerMode = &f[1]
 		}
-		err := os.WriteFile(fullPath, contents, 0o644)
-		require.NoError(t, err)
+		writeFile(t, fullPath, contents, 0o644)
 	case "symlink":
 		if len(f) < 1 {
 			t.Fatalf("invalid spec %q", spec)
 		}
 		target := f[0]
-		err := os.Symlink(target, fullPath)
-		require.NoError(t, err)
+		symlink(t, target, fullPath)
 	case "char", "block":
 		if len(f) < 2 {
 			t.Fatalf("invalid spec %q", spec)
@@ -227,7 +224,7 @@ func createTree(t *testing.T, specs ...string) string {
 
 	// Put the root in a subdir.
 	treeRoot := filepath.Join(root, "tree")
-	os.MkdirAll(treeRoot, 0o755)
+	mkdirAll(t, treeRoot, 0o755)
 
 	for _, spec := range specs {
 		createInTree(t, treeRoot, spec)

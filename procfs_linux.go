@@ -99,7 +99,7 @@ func newPrivateProcMount() (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer procfsCtx.Close()
+	defer procfsCtx.Close() //nolint:errcheck // close failures aren't critical here
 
 	// Try to configure hidepid=ptraceable,subset=pid if possible, but ignore errors.
 	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
@@ -364,7 +364,7 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get safe /proc/thread-self/%s handle: %w", fdPath, err)
 	}
-	defer procFdLink.Close()
+	defer procFdLink.Close() //nolint:errcheck // close failures aren't critical here
 	defer closer()
 
 	// Try to detect if there is a mount on top of the magic-link. Since we use the handle directly

@@ -27,7 +27,7 @@ func doMount(t *testing.T, source, target, fsType string, flags uintptr) {
 		file, err := os.OpenFile(source, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
 		defer runtime.KeepAlive(file)
-		defer file.Close()
+		defer file.Close() //nolint:errcheck // test code
 		sourcePath = fmt.Sprintf("/proc/self/fd/%d", file.Fd())
 	}
 
@@ -38,7 +38,7 @@ func doMount(t *testing.T, source, target, fsType string, flags uintptr) {
 		file, err := os.OpenFile(target, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
 		defer runtime.KeepAlive(file)
-		defer file.Close()
+		defer file.Close() //nolint:errcheck // test code
 		targetPath = fmt.Sprintf("/proc/self/fd/%d", file.Fd())
 	}
 
@@ -127,7 +127,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 
 		procRoot, err := procRootFn()
 		require.NoError(t, err)
-		defer procRoot.Close()
+		defer procRoot.Close() //nolint:errcheck // test code
 
 		// We expect to always detect tmpfs overmounts if we have a /proc with
 		// overmounts.
@@ -146,7 +146,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 
 		procSelf, closer, err := procThreadSelf(procRoot, ".")
 		require.NoError(t, err)
-		defer procSelf.Close()
+		defer procSelf.Close() //nolint:errcheck // test code
 		defer closer()
 
 		// Open these paths directly to emulate a non-openat2 handle that
@@ -154,10 +154,10 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		// properly for AT_EMPTY_PATH checks as well.
 		procCwd, err := openatFile(procSelf, "cwd", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
-		defer procCwd.Close()
+		defer procCwd.Close() //nolint:errcheck // test code
 		procExe, err := openatFile(procSelf, "exe", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
-		defer procExe.Close()
+		defer procExe.Close() //nolint:errcheck // test code
 
 		// no overmount
 		err = checkSymlinkOvermount(procRoot, procCwd, "")
@@ -254,7 +254,7 @@ func testProcOvermount(t *testing.T, procRootFn procRootFunc, privateProcMount b
 
 				procRoot, err := procRootFn()
 				if procRoot != nil {
-					defer procRoot.Close()
+					defer procRoot.Close() //nolint:errcheck // test code
 				}
 				if privateProcMount {
 					assert.NoError(t, err, "get proc handle should succeed")
@@ -316,7 +316,8 @@ func TestProcSelfFdPath(t *testing.T) {
 
 		// Open through the symlink.
 		handle, err := os.Open(symPath)
-		defer handle.Close()
+		require.NoError(t, err)
+		defer handle.Close() //nolint:errcheck // test code
 
 		// The check should fail if we expect the symlink path.
 		err = checkProcSelfFdPath(symPath, handle)
@@ -335,7 +336,7 @@ func TestProcSelfFdPath_DeadFile(t *testing.T) {
 		fullPath := path.Join(root, "file")
 		handle, err := os.Create(fullPath)
 		require.NoError(t, err)
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 
 		// The path still exists.
 		err = checkProcSelfFdPath(fullPath, handle)
@@ -365,7 +366,7 @@ func TestProcSelfFdPath_DeadDir(t *testing.T) {
 
 		handle, err := os.OpenFile(fullPath, unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 
 		// The path still exists.
 		err = checkProcSelfFdPath(fullPath, handle)
@@ -388,7 +389,7 @@ func TestProcSelfFdPath_DeadDir(t *testing.T) {
 func testVerifyProcRoot(t *testing.T, procRoot string, expectedErr error, errString string) {
 	fakeProcRoot, err := os.OpenFile(procRoot, unix.O_PATH|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
-	defer fakeProcRoot.Close()
+	defer fakeProcRoot.Close() //nolint:errcheck // test code
 
 	err = verifyProcRoot(fakeProcRoot)
 	assert.ErrorIsf(t, err, expectedErr, "verifyProcRoot(%s)", procRoot)

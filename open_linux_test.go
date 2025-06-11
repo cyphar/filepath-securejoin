@@ -53,13 +53,13 @@ func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 	}
 	if expectedErr != nil {
 		if assert.Error(t, err) {
-			assert.ErrorIs(t, err, expectedErr)
+			require.ErrorIs(t, err, expectedErr)
 		} else {
 			t.Errorf("unexpected handle %q", handle.Name())
 		}
 		return
 	}
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Get the original handle path.
 	handlePath, err := procSelfFdReadlink(handle)
@@ -93,13 +93,13 @@ func checkOpenInRoot(t *testing.T, openInRootFn openInRootFunc, root, unsafePath
 	}
 	if expected.err != nil {
 		if assert.Error(t, err) {
-			assert.ErrorIs(t, err, expected.err)
+			require.ErrorIs(t, err, expected.err)
 		} else {
 			t.Errorf("unexpected handle %q", handle.Name())
 		}
 		return
 	}
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Check the handle path.
 	gotPath, err := procSelfFdReadlink(handle)

@@ -76,7 +76,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 
 	// Actually make the tree.
 	err = mkdirAll(t, root, unsafePath, mode)
-	assert.ErrorIsf(t, err, expectedErr, "MkdirAll(%q, %q)", root, unsafePath)
+	require.ErrorIsf(t, err, expectedErr, "MkdirAll(%q, %q)", root, unsafePath)
 
 	remainingPath = filepath.Join("/", remainingPath)
 	for remainingPath != filepath.Dir(remainingPath) {
@@ -302,7 +302,10 @@ func newRacingMkdirMeta() *racingMkdirMeta {
 
 func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode os.FileMode, allowedErrs []error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-	require.NoError(t, err, "open root")
+	if !assert.NoError(t, err, "open root") { //nolint:testifylint // cannot use require.* in goroutines
+		m.failCount++
+		return
+	}
 	defer rootDir.Close() //nolint:errcheck // test code
 
 	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)

@@ -40,6 +40,7 @@ linters:
     - noctx
     - prealloc
     - staticcheck
+    - testifylint
     - unconvert
     - unparam
     - unused
@@ -48,6 +49,8 @@ linters:
     govet:
       enable:
         - nilness
+    testifylint:
+      enable-all: true
 
 formatters:
   enable:

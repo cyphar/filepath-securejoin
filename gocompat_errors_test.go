@@ -21,6 +21,6 @@ func TestGoCompatErrorWrap(t *testing.T) {
 	err := wrapBaseError(baseErr, extraErr)
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, baseErr, "wrapped error should contain base error")
-	assert.ErrorIs(t, err, extraErr, "wrapped error should contain extra error")
+	assert.ErrorIs(t, err, baseErr, "wrapped error should contain base error")   //nolint:testifylint // we are testing error behaviour directly
+	assert.ErrorIs(t, err, extraErr, "wrapped error should contain extra error") //nolint:testifylint // we are testing error behaviour directly
 }

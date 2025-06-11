@@ -37,16 +37,14 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 			assert.ErrorIs(t, err, expected.err)
 		}
 		if expected.handlePath == "" {
-			if handle != nil {
-				t.Errorf("unexpected handle %q", handle.Name())
-			}
+			require.Nil(t, handle, "expected to not get a handle")
 			return
 		}
 	} else {
 		if expected.remainingPath != "" {
 			t.Errorf("we expect a remaining path, but no error? %q", expected.remainingPath)
 		}
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	assert.NotNil(t, handle, "expected to get a handle")
 
@@ -640,7 +638,7 @@ func testSymlinkStack(t *testing.T, ops ...ssOp) symlinkStack {
 	var ss symlinkStack
 	for _, op := range ops {
 		err := op.op.Do(t, &ss)
-		if !assert.ErrorIsf(t, err, op.expectedErr, "%s", op) {
+		if !assert.ErrorIsf(t, err, op.expectedErr, "%s", op) { //nolint:testifylint
 			dumpStack(t, ss)
 			ss.Close()
 			t.FailNow()
@@ -686,17 +684,17 @@ type expectedStackEntry struct {
 
 func testStackContents(t *testing.T, msg string, ss symlinkStack, expected ...expectedStackEntry) {
 	if len(expected) > 0 {
-		require.Equalf(t, len(ss), len(expected), "%s: stack should be the expected length", msg)
+		require.Lenf(t, ss, len(expected), "%s: stack should be the expected length", msg)
 		require.Falsef(t, ss.IsEmpty(), "%s: stack IsEmpty should be false", msg)
 	} else {
-		require.Emptyf(t, len(ss), "%s: stack should be empty", msg)
+		require.Emptyf(t, ss, "%s: stack should be empty", msg)
 		require.Truef(t, ss.IsEmpty(), "%s: stack IsEmpty should be true", msg)
 	}
 
 	for idx, entry := range expected {
-		assert.Equalf(t, ss[idx].dir.Name(), entry.expectedDirName, "%s: stack entry %d name mismatch", msg, idx)
+		assert.Equalf(t, entry.expectedDirName, ss[idx].dir.Name(), "%s: stack entry %d name mismatch", msg, idx)
 		if len(entry.expectedUnwalked) > 0 {
-			assert.Equalf(t, ss[idx].linkUnwalked, entry.expectedUnwalked, "%s: stack entry %d unwalked link entries mismatch", msg, idx)
+			assert.Equalf(t, entry.expectedUnwalked, ss[idx].linkUnwalked, "%s: stack entry %d unwalked link entries mismatch", msg, idx)
 		} else {
 			assert.Emptyf(t, ss[idx].linkUnwalked, "%s: stack entry %d unwalked link entries", msg, idx)
 		}

@@ -161,21 +161,21 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 
 		// no overmount
 		err = checkSymlinkOvermount(procRoot, procCwd, "")
-		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed")
+		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		err = checkSymlinkOvermount(procRoot, procSelf, "cwd")
-		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed")
+		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// basic overmount
 		err = checkSymlinkOvermount(procRoot, procExe, "")
-		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result")
+		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		err = checkSymlinkOvermount(procRoot, procSelf, "exe")
-		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result")
+		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// fd no overmount
 		_, err = doRawProcSelfFdReadlink(procRoot, 1)
-		assert.NoError(t, err, "checking /proc/self/fd/1 with no overmount should succeed")
+		assert.NoError(t, err, "checking /proc/self/fd/1 with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// fd overmount
 		link, err := doRawProcSelfFdReadlink(procRoot, 0)
-		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/fd/0 overmount result: got link %q", link)
+		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/fd/0 overmount result: got link %q", link) //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
 
@@ -257,10 +257,10 @@ func testProcOvermount(t *testing.T, procRootFn procRootFunc, privateProcMount b
 					defer procRoot.Close() //nolint:errcheck // test code
 				}
 				if privateProcMount {
-					assert.NoError(t, err, "get proc handle should succeed")
-					assert.NoError(t, verifyProcRoot(procRoot), "verify private proc mount should succeed")
+					assert.NoError(t, err, "get proc handle should succeed")                                //nolint:testifylint
+					assert.NoError(t, verifyProcRoot(procRoot), "verify private proc mount should succeed") //nolint:testifylint
 				} else {
-					if !assert.ErrorIs(t, err, errUnsafeProcfs, "get proc handle should fail") {
+					if !assert.ErrorIs(t, err, errUnsafeProcfs, "get proc handle should fail") { //nolint:testifylint
 						t.Logf("procRootFn() = %v, %v", procRoot, err)
 					}
 				}
@@ -321,11 +321,11 @@ func TestProcSelfFdPath(t *testing.T) {
 
 		// The check should fail if we expect the symlink path.
 		err = checkProcSelfFdPath(symPath, handle)
-		assert.ErrorIs(t, err, errPossibleBreakout, "checkProcSelfFdPath should fail for wrong path")
+		assert.ErrorIs(t, err, errPossibleBreakout, "checkProcSelfFdPath should fail for wrong path") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// The check should fail if we expect the symlink path.
 		err = checkProcSelfFdPath(filePath, handle)
-		assert.NoError(t, err)
+		assert.NoError(t, err) //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
 
@@ -340,7 +340,7 @@ func TestProcSelfFdPath_DeadFile(t *testing.T) {
 
 		// The path still exists.
 		err = checkProcSelfFdPath(fullPath, handle)
-		assert.NoError(t, err, "checkProcSelfFdPath should succeed with regular file")
+		assert.NoError(t, err, "checkProcSelfFdPath should succeed with regular file") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// Delete the path.
 		err = os.Remove(fullPath)
@@ -348,11 +348,11 @@ func TestProcSelfFdPath_DeadFile(t *testing.T) {
 
 		// The check should fail now.
 		err = checkProcSelfFdPath(fullPath, handle)
-		assert.ErrorIs(t, err, errDeletedInode, "checkProcSelfFdPath should fail after deletion")
+		assert.ErrorIs(t, err, errDeletedInode, "checkProcSelfFdPath should fail after deletion") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// The check should fail even if the expected path ends with " (deleted)".
 		err = checkProcSelfFdPath(fullPath+" (deleted)", handle)
-		assert.ErrorIs(t, err, errDeletedInode, "checkProcSelfFdPath should fail after deletion even with (deleted) suffix")
+		assert.ErrorIs(t, err, errDeletedInode, "checkProcSelfFdPath should fail after deletion even with (deleted) suffix") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
 
@@ -370,7 +370,7 @@ func TestProcSelfFdPath_DeadDir(t *testing.T) {
 
 		// The path still exists.
 		err = checkProcSelfFdPath(fullPath, handle)
-		assert.NoError(t, err, "checkProcSelfFdPath should succeed with regular directory")
+		assert.NoError(t, err, "checkProcSelfFdPath should succeed with regular directory") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// Delete the path.
 		err = os.Remove(fullPath)
@@ -378,11 +378,11 @@ func TestProcSelfFdPath_DeadDir(t *testing.T) {
 
 		// The check should fail now.
 		err = checkProcSelfFdPath(fullPath, handle)
-		assert.ErrorIs(t, err, errInvalidDirectory, "checkProcSelfFdPath should fail after deletion")
+		assert.ErrorIs(t, err, errInvalidDirectory, "checkProcSelfFdPath should fail after deletion") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// The check should fail even if the expected path ends with " (deleted)".
 		err = checkProcSelfFdPath(fullPath+" (deleted)", handle)
-		assert.ErrorIs(t, err, errInvalidDirectory, "checkProcSelfFdPath should fail after deletion even with (deleted) suffix")
+		assert.ErrorIs(t, err, errInvalidDirectory, "checkProcSelfFdPath should fail after deletion even with (deleted) suffix") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
 
@@ -392,9 +392,9 @@ func testVerifyProcRoot(t *testing.T, procRoot string, expectedErr error, errStr
 	defer fakeProcRoot.Close() //nolint:errcheck // test code
 
 	err = verifyProcRoot(fakeProcRoot)
-	assert.ErrorIsf(t, err, expectedErr, "verifyProcRoot(%s)", procRoot)
+	require.ErrorIsf(t, err, expectedErr, "verifyProcRoot(%s)", procRoot)
 	if expectedErr != nil {
-		assert.ErrorContainsf(t, err, errString, "verifyProcRoot(%s)", procRoot)
+		require.ErrorContainsf(t, err, errString, "verifyProcRoot(%s)", procRoot)
 	}
 }
 

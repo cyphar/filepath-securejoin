@@ -280,7 +280,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 				return nil, "", fmt.Errorf("stat component %q: %w", part, err)
 			}
 
-			switch st.Mode() & os.ModeType {
+			switch st.Mode() & os.ModeType { //nolint:exhaustive // just a glorified if statement
 			case os.ModeSymlink:
 				// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See
 				// Linux commit 65cfc6722361 ("readlinkat(), fchownat() and

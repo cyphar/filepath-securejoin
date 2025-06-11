@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -44,12 +45,12 @@ func scopedLookupShouldRetry(how *unix.OpenHow, err error) bool {
 const scopedLookupMaxRetries = 10
 
 func openat2File(dir *os.File, path string, how *unix.OpenHow) (*os.File, error) {
-	fullPath := dir.Name() + "/" + path
+	dirFd, fullPath := prepareAt(dir, path)
 	// Make sure we always set O_CLOEXEC.
 	how.Flags |= unix.O_CLOEXEC
 	var tries int
 	for tries < scopedLookupMaxRetries {
-		fd, err := unix.Openat2(int(dir.Fd()), path, how)
+		fd, err := unix.Openat2(dirFd, path, how)
 		if err != nil {
 			if scopedLookupShouldRetry(how, err) {
 				// We retry a couple of times to avoid the spurious errors, and
@@ -60,6 +61,7 @@ func openat2File(dir *os.File, path string, how *unix.OpenHow) (*os.File, error)
 			}
 			return nil, &os.PathError{Op: "openat2", Path: fullPath, Err: err}
 		}
+		runtime.KeepAlive(dir)
 		// If we are using RESOLVE_IN_ROOT, the name we generated may be wrong.
 		// NOTE: The procRoot code MUST NOT use RESOLVE_IN_ROOT, otherwise
 		//       you'll get infinite recursion here.

@@ -16,7 +16,7 @@ func symlink(t *testing.T, oldname, newname string) {
 	require.NoError(t, err)
 }
 
-func mkdirAll(t *testing.T, path string, mode os.FileMode) {
+func mkdirAll(t *testing.T, path string, mode os.FileMode) { //nolint:unparam // wrapper func
 	err := os.MkdirAll(path, mode)
 	require.NoError(t, err)
 }

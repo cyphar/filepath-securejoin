@@ -190,7 +190,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 	// root is some magic-link like /proc/$pid/root, in which case we want to
 	// make sure when we do checkProcSelfFdPath that we are using the correct
 	// root path.
-	logicalRootPath, err := procSelfFdReadlink(root)
+	logicalRootPath, err := ProcSelfFdReadlink(root)
 	if err != nil {
 		return nil, "", fmt.Errorf("get real root path: %w", err)
 	}

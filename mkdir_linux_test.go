@@ -46,7 +46,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	require.NoError(t, err)
 
 	// Now double-check that the handle is correct.
-	gotPath, err := procSelfFdReadlink(handle)
+	gotPath, err := ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expectedPath, gotPath, "wrong final path from MkdirAllHandle")
 	// Also check that the f.Name() is correct while we're at it (this is

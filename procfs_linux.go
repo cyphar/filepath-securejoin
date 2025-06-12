@@ -207,6 +207,13 @@ type procThreadSelfCloser func()
 //
 // This is similar to ProcThreadSelf from runc, but with extra hardening
 // applied and using *os.File.
+//
+// NOTE: THIS IS NOT YET SAFE TO EXPORT. The non-openat2(2) case is just using
+// a plain openat(2), which is not entirely safe against overmount attacks.
+// Yes, if we are using fsopen(2) or open_tree(2) (without AT_RECURSIVE), then
+// this is safe, but we shouldn't make less privileged users (or users on older
+// kernels) incorrectly assume this is safe. libpathrs does it correctly, and
+// it's best to leave it to them.
 func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
 	// We need to lock our thread until the caller is done with the handle
 	// because between getting the handle and using it we could get interrupted

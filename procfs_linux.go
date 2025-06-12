@@ -113,19 +113,15 @@ func newPrivateProcMount() (*os.File, error) {
 }
 
 func openTree(dir *os.File, path string, flags uint) (*os.File, error) {
-	dirFd := -int(unix.EBADF)
-	dirName := "."
-	if dir != nil {
-		dirFd = int(dir.Fd())
-		dirName = dir.Name()
-	}
+	dirFd, fullPath := prepareAt(dir, path)
 	// Make sure we always set O_CLOEXEC.
 	flags |= unix.OPEN_TREE_CLOEXEC
 	fd, err := unix.OpenTree(dirFd, path, flags)
 	if err != nil {
-		return nil, &os.PathError{Op: "open_tree", Path: path, Err: err}
+		return nil, &os.PathError{Op: "open_tree", Path: fullPath, Err: err}
 	}
-	return os.NewFile(uintptr(fd), dirName+"/"+path), nil
+	runtime.KeepAlive(dir)
+	return os.NewFile(uintptr(fd), fullPath), nil
 }
 
 func clonePrivateProcMount() (_ *os.File, Err error) {
@@ -325,15 +321,17 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 		wantStxMask uint32 = STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
 	)
 
-	err := unix.Statx(int(dir.Fd()), path, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW, int(wantStxMask), &stx)
+	dirFd, fullPath := prepareAt(dir, path)
+	err := unix.Statx(dirFd, path, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW, int(wantStxMask), &stx)
 	if stx.Mask&wantStxMask == 0 {
 		// It's not a kernel limitation, for some reason we couldn't get a
 		// mount ID. Assume it's some kind of attack.
 		err = fmt.Errorf("%w: could not get mount id", errUnsafeProcfs)
 	}
 	if err != nil {
-		return 0, &os.PathError{Op: "statx(STATX_MNT_ID_...)", Path: dir.Name() + "/" + path, Err: err}
+		return 0, &os.PathError{Op: "statx(STATX_MNT_ID_...)", Path: fullPath, Err: err}
 	}
+	runtime.KeepAlive(dir)
 	return stx.Mnt_id, nil
 }
 

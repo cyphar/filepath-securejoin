@@ -21,7 +21,7 @@ func dupFile(f *os.File) (*os.File, error) {
 	return os.NewFile(uintptr(fd), f.Name()), nil
 }
 
-func openatFile(dir *os.File, path string, flags int, mode int) (*os.File, error) {
+func openatFile(dir *os.File, path string, flags int, mode int) (*os.File, error) { //nolint:unparam // wrapper func
 	// Make sure we always set O_CLOEXEC.
 	flags |= unix.O_CLOEXEC
 	fd, err := unix.Openat(int(dir.Fd()), path, flags, uint32(mode))

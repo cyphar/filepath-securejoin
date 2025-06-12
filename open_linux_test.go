@@ -29,7 +29,7 @@ type openResult struct {
 // 64-bit machines. Unfortunately, it is architecture-dependent and
 // unix.O_LARGEFILE is 0 (presumably to avoid users setting it). So we need to
 // initialise it at init.
-var O_LARGEFILE = 0x8000
+var O_LARGEFILE = 0x8000 //nolint:revive // unix.* name
 
 func init() {
 	switch runtime.GOARCH {
@@ -49,17 +49,17 @@ func init() {
 func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 	newHandle, err := Reopen(handle, flags)
 	if newHandle != nil {
-		defer newHandle.Close()
+		defer newHandle.Close() //nolint:errcheck // test code
 	}
 	if expectedErr != nil {
 		if assert.Error(t, err) {
-			assert.ErrorIs(t, err, expectedErr)
+			require.ErrorIs(t, err, expectedErr)
 		} else {
 			t.Errorf("unexpected handle %q", handle.Name())
 		}
 		return
 	}
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Get the original handle path.
 	handlePath, err := procSelfFdReadlink(handle)
@@ -89,17 +89,17 @@ func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 func checkOpenInRoot(t *testing.T, openInRootFn openInRootFunc, root, unsafePath string, expected openResult) {
 	handle, err := openInRootFn(root, unsafePath)
 	if handle != nil {
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 	}
 	if expected.err != nil {
 		if assert.Error(t, err) {
-			assert.ErrorIs(t, err, expected.err)
+			require.ErrorIs(t, err, expected.err)
 		} else {
 			t.Errorf("unexpected handle %q", handle.Name())
 		}
 		return
 	}
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Check the handle path.
 	gotPath, err := procSelfFdReadlink(handle)
@@ -365,14 +365,14 @@ func TestOpenInRootHandle(t *testing.T) {
 			if err != nil {
 				return nil, err
 			}
-			defer rootDir.Close()
+			defer rootDir.Close() //nolint:errcheck // test code
 
 			return OpenatInRoot(rootDir, unsafePath)
 		})
 	})
 }
 
-func TestOpenInRoot_BadInode(t *testing.T) {
+func TestOpenInRoot_BadInode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	requireRoot(t) // mknod
 
 	withWithoutOpenat2(t, true, func(t *testing.T) {
@@ -387,7 +387,7 @@ func TestOpenInRoot_BadInode(t *testing.T) {
 
 		rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
-		defer rootDir.Close()
+		defer rootDir.Close() //nolint:errcheck // test code
 
 		for name, test := range map[string]struct {
 			unsafePath string

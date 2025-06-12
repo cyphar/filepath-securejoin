@@ -113,7 +113,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 		return nil, fmt.Errorf("cannot create subdirectories in %q: %w", currentDir.Name(), unix.ENOTDIR)
 	} else if err != nil {
 		return nil, fmt.Errorf("re-opening handle to %q: %w", currentDir.Name(), err)
-	} else {
+	} else { //nolint:revive // indent-error-flow lint doesn't make sense here
 		_ = currentDir.Close()
 		currentDir = reopenDir
 	}
@@ -154,7 +154,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 				// TODO: Once we bump the minimum Go version to 1.20, we can use
 				// multiple %w verbs for this wrapping. For now we need to use a
 				// compatibility shim for older Go versions.
-				//err = fmt.Errorf("%w (%w)", err, deadErr)
+				// err = fmt.Errorf("%w (%w)", err, deadErr)
 				err = wrapBaseError(err, deadErr)
 			}
 			return nil, err
@@ -225,7 +225,7 @@ func MkdirAll(root, unsafePath string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // close failures aren't critical here
 
 	f, err := MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {

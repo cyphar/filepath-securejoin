@@ -272,15 +272,15 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 
 		// Try to open the next component.
 		nextDir, err := openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-		switch {
-		case err == nil:
+		switch err {
+		case nil:
 			st, err := nextDir.Stat()
 			if err != nil {
 				_ = nextDir.Close()
 				return nil, "", fmt.Errorf("stat component %q: %w", part, err)
 			}
 
-			switch st.Mode() & os.ModeType {
+			switch st.Mode() & os.ModeType { //nolint:exhaustive // just a glorified if statement
 			case os.ModeSymlink:
 				// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See
 				// Linux commit 65cfc6722361 ("readlinkat(), fchownat() and

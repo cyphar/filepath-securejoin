@@ -103,7 +103,7 @@ func partialLookupOpenat2(root *os.File, unsafePath string) (*os.File, string, e
 		if err == nil {
 			// Jump over the slash if we have a non-"" remainingPath.
 			if endIdx < len(unsafePath) {
-				endIdx += 1
+				endIdx++
 			}
 			// We found a subpath!
 			return handle, unsafePath[endIdx:], lastError

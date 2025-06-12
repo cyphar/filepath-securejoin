@@ -53,7 +53,7 @@ func verifyProcRoot(procRoot *os.File) error {
 	return nil
 }
 
-var hasNewMountApi = sync_OnceValue(func() bool {
+var hasNewMountAPI = sync_OnceValue(func() bool {
 	// All of the pieces of the new mount API we use (fsopen, fsconfig,
 	// fsmount, open_tree) were added together in Linux 5.1[1,2], so we can
 	// just check for one of the syscalls and the others should also be
@@ -99,7 +99,7 @@ func newPrivateProcMount() (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer procfsCtx.Close()
+	defer procfsCtx.Close() //nolint:errcheck // close failures aren't critical here
 
 	// Try to configure hidepid=ptraceable,subset=pid if possible, but ignore errors.
 	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
@@ -151,7 +151,7 @@ func clonePrivateProcMount() (_ *os.File, Err error) {
 }
 
 func privateProcRoot() (*os.File, error) {
-	if !hasNewMountApi() || hookForceGetProcRootUnsafe() {
+	if !hasNewMountAPI() || hookForceGetProcRootUnsafe() {
 		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
 	}
 	// Try to create a new procfs mount from scratch if we can. This ensures we
@@ -267,7 +267,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 			// TODO: Once we bump the minimum Go version to 1.20, we can use
 			// multiple %w verbs for this wrapping. For now we need to use a
 			// compatibility shim for older Go versions.
-			//err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
 			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
 		}
 	} else {
@@ -276,7 +276,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 			// TODO: Once we bump the minimum Go version to 1.20, we can use
 			// multiple %w verbs for this wrapping. For now we need to use a
 			// compatibility shim for older Go versions.
-			//err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
 			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
 		}
 		defer func() {
@@ -299,9 +299,9 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 // STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
 // avoid bumping the requirement for a single constant we can just define it
 // ourselves.
-const STATX_MNT_ID_UNIQUE = 0x4000
+const STATX_MNT_ID_UNIQUE = 0x4000 //nolint:revive // unix.* name
 
-var hasStatxMountId = sync_OnceValue(func() bool {
+var hasStatxMountID = sync_OnceValue(func() bool {
 	var (
 		stx unix.Statx_t
 		// We don't care which mount ID we get. The kernel will give us the
@@ -312,9 +312,9 @@ var hasStatxMountId = sync_OnceValue(func() bool {
 	return err == nil && stx.Mask&wantStxMask != 0
 })
 
-func getMountId(dir *os.File, path string) (uint64, error) {
+func getMountID(dir *os.File, path string) (uint64, error) {
 	// If we don't have statx(STATX_MNT_ID*) support, we can't do anything.
-	if !hasStatxMountId() {
+	if !hasStatxMountID() {
 		return 0, nil
 	}
 
@@ -338,13 +338,13 @@ func getMountId(dir *os.File, path string) (uint64, error) {
 }
 
 func checkSymlinkOvermount(procRoot *os.File, dir *os.File, path string) error {
-	// Get the mntId of our procfs handle.
-	expectedMountId, err := getMountId(procRoot, "")
+	// Get the mntID of our procfs handle.
+	expectedMountID, err := getMountID(procRoot, "")
 	if err != nil {
 		return err
 	}
-	// Get the mntId of the target magic-link.
-	gotMountId, err := getMountId(dir, path)
+	// Get the mntID of the target magic-link.
+	gotMountID, err := getMountID(dir, path)
 	if err != nil {
 		return err
 	}
@@ -352,8 +352,8 @@ func checkSymlinkOvermount(procRoot *os.File, dir *os.File, path string) error {
 	// we would expect to see a different mount ID here. (Of course, if we're
 	// using unsafeHostProcRoot() then an attaker could change this after we
 	// did this check.)
-	if expectedMountId != gotMountId {
-		return fmt.Errorf("%w: symlink %s/%s has an overmount obscuring the real link (mount ids do not match %d != %d)", errUnsafeProcfs, dir.Name(), path, expectedMountId, gotMountId)
+	if expectedMountID != gotMountID {
+		return fmt.Errorf("%w: symlink %s/%s has an overmount obscuring the real link (mount ids do not match %d != %d)", errUnsafeProcfs, dir.Name(), path, expectedMountID, gotMountID)
 	}
 	return nil
 }
@@ -364,7 +364,7 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("get safe /proc/thread-self/%s handle: %w", fdPath, err)
 	}
-	defer procFdLink.Close()
+	defer procFdLink.Close() //nolint:errcheck // close failures aren't critical here
 	defer closer()
 
 	// Try to detect if there is a mount on top of the magic-link. Since we use the handle directly

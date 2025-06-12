@@ -25,7 +25,7 @@ func clearSlice[S ~[]E, E any](slice S) {
 }
 
 // Copied from the Go 1.24 stdlib implementation.
-func slices_IndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
+func slices_IndexFunc[S ~[]E, E any](s S, f func(E) bool) int { //nolint:revive // name is meant to mirror stdlib
 	for i := range s {
 		if f(s[i]) {
 			return i
@@ -35,7 +35,7 @@ func slices_IndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
 }
 
 // Copied from the Go 1.24 stdlib implementation.
-func slices_DeleteFunc[S ~[]E, E any](s S, del func(E) bool) S {
+func slices_DeleteFunc[S ~[]E, E any](s S, del func(E) bool) S { //nolint:revive // name is meant to mirror stdlib
 	i := slices_IndexFunc(s, del)
 	if i == -1 {
 		return s
@@ -53,12 +53,12 @@ func slices_DeleteFunc[S ~[]E, E any](s S, del func(E) bool) S {
 
 // Similar to the stdlib slices.Contains, except that we don't have
 // slices.Index so we need to use slices.IndexFunc for this non-Func helper.
-func slices_Contains[S ~[]E, E comparable](s S, v E) bool {
+func slices_Contains[S ~[]E, E comparable](s S, v E) bool { //nolint:revive // name is meant to mirror stdlib
 	return slices_IndexFunc(s, func(e E) bool { return e == v }) >= 0
 }
 
 // Copied from the Go 1.24 stdlib implementation.
-func slices_Clone[S ~[]E, E any](s S) S {
+func slices_Clone[S ~[]E, E any](s S) S { //nolint:revive // name is meant to mirror stdlib
 	// Preserve nil in case it matters.
 	if s == nil {
 		return nil
@@ -67,7 +67,7 @@ func slices_Clone[S ~[]E, E any](s S) S {
 }
 
 // Copied from the Go 1.24 stdlib implementation.
-func sync_OnceValue[T any](f func() T) func() T {
+func sync_OnceValue[T any](f func() T) func() T { //nolint:revive // name is meant to mirror stdlib
 	var (
 		once   sync.Once
 		valid  bool
@@ -95,7 +95,7 @@ func sync_OnceValue[T any](f func() T) func() T {
 }
 
 // Copied from the Go 1.24 stdlib implementation.
-func sync_OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) {
+func sync_OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) { //nolint:revive // name is meant to mirror stdlib
 	var (
 		once  sync.Once
 		valid bool

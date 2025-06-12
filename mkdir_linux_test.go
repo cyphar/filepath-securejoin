@@ -22,23 +22,23 @@ import (
 
 type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode os.FileMode) error
 
-var mkdirAll_MkdirAll mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode os.FileMode) error {
+var mkdirAll_MkdirAll mkdirAllFunc = func(_ *testing.T, root, unsafePath string, mode os.FileMode) error { //nolint:revive // underscores are more readable for test helpers
 	// We can't check expectedPath here.
 	return MkdirAll(root, unsafePath, mode)
 }
 
-var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode os.FileMode) error {
+var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode os.FileMode) error { //nolint:revive // underscores are more readable for test helpers
 	// Same logic as MkdirAll.
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return err
 	}
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // test code
 	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {
 		return err
 	}
-	defer handle.Close()
+	defer handle.Close() //nolint:errcheck // test code
 
 	// We can use SecureJoin here because we aren't being attacked in this
 	// particular test. Obviously this check is bogus for actual programs.
@@ -58,7 +58,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string, mode os.FileMode, expectedMode int, expectedErr error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // test code
 
 	// Before trying to make the tree, figure out what components don't exist
 	// yet so we can check them later.
@@ -66,7 +66,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 	handleName := "<nil>"
 	if handle != nil {
 		handleName = handle.Name()
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 	}
 	defer func() {
 		if t.Failed() {
@@ -76,7 +76,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 
 	// Actually make the tree.
 	err = mkdirAll(t, root, unsafePath, mode)
-	assert.ErrorIsf(t, err, expectedErr, "MkdirAll(%q, %q)", root, unsafePath)
+	require.ErrorIsf(t, err, expectedErr, "MkdirAll(%q, %q)", root, unsafePath)
 
 	remainingPath = filepath.Join("/", remainingPath)
 	for remainingPath != filepath.Dir(remainingPath) {
@@ -98,7 +98,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 	}
 }
 
-func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) {
+func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive // underscores are more readable for test helpers
 	// We create a new tree for each test, but the template is the same.
 	tree := []string{
 		"dir a",
@@ -196,15 +196,15 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) {
 	})
 }
 
-func TestMkdirAll_Basic(t *testing.T) {
+func TestMkdirAll_Basic(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	testMkdirAll_Basic(t, mkdirAll_MkdirAll)
 }
 
-func TestMkdirAllHandle_Basic(t *testing.T) {
+func TestMkdirAllHandle_Basic(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	testMkdirAll_Basic(t, mkdirAll_MkdirAllHandle)
 }
 
-func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) {
+func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive // underscores are more readable for test helpers
 	requireRoot(t) // chown
 
 	// We create a new tree for each test, but the template is the same.
@@ -238,15 +238,15 @@ func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) {
 	})
 }
 
-func TestMkdirAll_AsRoot(t *testing.T) {
+func TestMkdirAll_AsRoot(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	testMkdirAll_AsRoot(t, mkdirAll_MkdirAll)
 }
 
-func TestMkdirAllHandle_AsRoot(t *testing.T) {
+func TestMkdirAllHandle_AsRoot(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	testMkdirAll_AsRoot(t, mkdirAll_MkdirAllHandle)
 }
 
-func testMkdirAll_InvalidMode(t *testing.T, mkdirAll mkdirAllFunc) {
+func testMkdirAll_InvalidMode(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive // underscores are more readable for test helpers
 	for _, test := range []struct {
 		mode        os.FileMode
 		expectedErr error
@@ -281,11 +281,11 @@ func testMkdirAll_InvalidMode(t *testing.T, mkdirAll mkdirAllFunc) {
 	}
 }
 
-func TestMkdirAll_InvalidMode(t *testing.T) {
+func TestMkdirAll_InvalidMode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	testMkdirAll_InvalidMode(t, mkdirAll_MkdirAll)
 }
 
-func TestMkdirAllHandle_InvalidMode(t *testing.T) {
+func TestMkdirAllHandle_InvalidMode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	testMkdirAll_InvalidMode(t, mkdirAll_MkdirAllHandle)
 }
 
@@ -300,10 +300,13 @@ func newRacingMkdirMeta() *racingMkdirMeta {
 	}
 }
 
-func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode os.FileMode, allowedErrs []error) {
+func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafePath string, mode os.FileMode, allowedErrs []error) { //nolint:revive // underscores are more readable for test helpers
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-	require.NoError(t, err, "open root")
-	defer rootDir.Close()
+	if !assert.NoError(t, err, "open root") { //nolint:testifylint // cannot use require.* in goroutines
+		m.failCount++
+		return
+	}
+	defer rootDir.Close() //nolint:errcheck // test code
 
 	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {
@@ -318,7 +321,7 @@ func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafeP
 		m.failCount++
 		return
 	}
-	defer handle.Close()
+	defer handle.Close() //nolint:errcheck // test code
 
 	// It's possible for an attacker to have swapped the final directory, but
 	// this is okay because MkdirAll will use pre-existing directories anyway.
@@ -327,7 +330,7 @@ func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafeP
 	m.passOkCount++
 }
 
-func TestMkdirAllHandle_RacingRename(t *testing.T) {
+func TestMkdirAllHandle_RacingRename(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	withWithoutOpenat2(t, false, func(t *testing.T) {
 		treeSpec := []string{
 			"dir target/a/b/c",
@@ -434,7 +437,7 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) {
 	})
 }
 
-func TestMkdirAllHandle_RacingDelete(t *testing.T) {
+func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	withWithoutOpenat2(t, false, func(t *testing.T) {
 		treeSpec := []string{
 			"dir target/a/b/c",
@@ -505,7 +508,7 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) {
 }
 
 // Regression test for <https://github.com/opencontainers/runc/issues/4543>.
-func TestMkdirAllHandle_RacingCreate(t *testing.T) {
+func TestMkdirAllHandle_RacingCreate(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	withWithoutOpenat2(t, false, func(t *testing.T) {
 		threadRanges := []int{2, 4, 8, 16, 32, 64, 128, 512, 1024}
 		for _, numThreads := range threadRanges {

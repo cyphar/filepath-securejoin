@@ -30,23 +30,21 @@ type lookupResult struct {
 func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir *os.File, unsafePath string, expected lookupResult) {
 	handle, remainingPath, err := partialLookupFn(rootDir, unsafePath)
 	if handle != nil {
-		defer handle.Close()
+		defer handle.Close() //nolint:errcheck // test code
 	}
 	if expected.err != nil {
 		if assert.Error(t, err) {
 			assert.ErrorIs(t, err, expected.err)
 		}
 		if expected.handlePath == "" {
-			if handle != nil {
-				t.Errorf("unexpected handle %q", handle.Name())
-			}
+			require.Nil(t, handle, "expected to not get a handle")
 			return
 		}
 	} else {
 		if expected.remainingPath != "" {
 			t.Errorf("we expect a remaining path, but no error? %q", expected.remainingPath)
 		}
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
 	assert.NotNil(t, handle, "expected to get a handle")
 
@@ -143,7 +141,7 @@ func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {
 
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
-	defer rootDir.Close()
+	defer rootDir.Close() //nolint:errcheck // test code
 
 	for name, test := range map[string]struct {
 		unsafePath string
@@ -318,7 +316,7 @@ func TestPartialLookupInRoot_BadInode(t *testing.T) {
 
 		rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
-		defer rootDir.Close()
+		defer rootDir.Close() //nolint:errcheck // test code
 
 		for name, test := range map[string]struct {
 			unsafePath string
@@ -543,7 +541,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 
 				rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 				require.NoError(t, err)
-				defer rootDir.Close()
+				defer rootDir.Close() //nolint:errcheck // test code
 
 				// If the swapping subpaths are "." we need to use an absolute
 				// path because renaming "." isn't allowed.
@@ -587,7 +585,6 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 				}
 			})
 		}
-
 	})
 }
 
@@ -598,7 +595,7 @@ type ssOperation interface {
 
 type ssOpPop struct{ part string }
 
-func (op ssOpPop) Do(t *testing.T, s *symlinkStack) error { return s.PopPart(op.part) }
+func (op ssOpPop) Do(_ *testing.T, s *symlinkStack) error { return s.PopPart(op.part) }
 
 func (op ssOpPop) String() string { return fmt.Sprintf("PopPart(%q)", op.part) }
 
@@ -641,7 +638,7 @@ func testSymlinkStack(t *testing.T, ops ...ssOp) symlinkStack {
 	var ss symlinkStack
 	for _, op := range ops {
 		err := op.op.Do(t, &ss)
-		if !assert.ErrorIsf(t, err, op.expectedErr, "%s", op) {
+		if !assert.ErrorIsf(t, err, op.expectedErr, "%s", op) { //nolint:testifylint
 			dumpStack(t, ss)
 			ss.Close()
 			t.FailNow()
@@ -659,7 +656,7 @@ func TestSymlinkStackBasic(t *testing.T) {
 		ssOp{op: ssOpPop{"taillink"}},
 		ssOp{op: ssOpPop{"anotherbit"}},
 	)
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 
 	if !assert.True(t, ss.IsEmpty()) {
 		dumpStack(t, ss)
@@ -677,7 +674,7 @@ func TestSymlinkStackBadPop(t *testing.T) {
 		ssOp{op: ssOpSwapLink{"abcd", "D", "", ""}}, // TODO: This is technically an invalid thing to push.
 		ssOp{op: ssOpSwapLink{"another", "E", "", ""}, expectedErr: errBrokenSymlinkStack},
 	)
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 }
 
 type expectedStackEntry struct {
@@ -687,17 +684,17 @@ type expectedStackEntry struct {
 
 func testStackContents(t *testing.T, msg string, ss symlinkStack, expected ...expectedStackEntry) {
 	if len(expected) > 0 {
-		require.Equalf(t, len(ss), len(expected), "%s: stack should be the expected length", msg)
+		require.Lenf(t, ss, len(expected), "%s: stack should be the expected length", msg)
 		require.Falsef(t, ss.IsEmpty(), "%s: stack IsEmpty should be false", msg)
 	} else {
-		require.Emptyf(t, len(ss), "%s: stack should be empty", msg)
+		require.Emptyf(t, ss, "%s: stack should be empty", msg)
 		require.Truef(t, ss.IsEmpty(), "%s: stack IsEmpty should be true", msg)
 	}
 
 	for idx, entry := range expected {
-		assert.Equalf(t, ss[idx].dir.Name(), entry.expectedDirName, "%s: stack entry %d name mismatch", msg, idx)
+		assert.Equalf(t, entry.expectedDirName, ss[idx].dir.Name(), "%s: stack entry %d name mismatch", msg, idx)
 		if len(entry.expectedUnwalked) > 0 {
-			assert.Equalf(t, ss[idx].linkUnwalked, entry.expectedUnwalked, "%s: stack entry %d unwalked link entries mismatch", msg, idx)
+			assert.Equalf(t, entry.expectedUnwalked, ss[idx].linkUnwalked, "%s: stack entry %d unwalked link entries mismatch", msg, idx)
 		} else {
 			assert.Emptyf(t, ss[idx].linkUnwalked, "%s: stack entry %d unwalked link entries", msg, idx)
 		}
@@ -722,7 +719,7 @@ func TestSymlinkStackBasicTailChain(t *testing.T) {
 			dumpStack(t, ss)
 		}
 	}()
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 
 	// Basic expected contents.
 	testStackContents(t, "initial state", ss,
@@ -774,26 +771,26 @@ func TestSymlinkStackTailChain(t *testing.T) {
 			dumpStack(t, ss)
 		}
 	}()
-	defer ss.Close()
+	defer ss.Close() //nolint:errcheck // test code
 
 	// Basic expected contents.
 	initialState := []expectedStackEntry{
 		// Top entry is not a tail-chain.
-		expectedStackEntry{"A", []string{"subdir1"}},
+		{"A", []string{"subdir1"}},
 		// The first tail-chain should have no unwalked links.
-		expectedStackEntry{"B", nil},
-		expectedStackEntry{"C", nil},
-		expectedStackEntry{"D", nil},
+		{"B", nil},
+		{"C", nil},
+		{"D", nil},
 		// Final entry in the first tail-chain.
-		expectedStackEntry{"E", []string{"subdir2"}},
+		{"E", []string{"subdir2"}},
 		// The second tail-chain should have no unwalked links.
-		expectedStackEntry{"F", nil},
-		expectedStackEntry{"G", nil},
-		expectedStackEntry{"H", nil},
-		expectedStackEntry{"I", nil},
-		expectedStackEntry{"J", nil},
+		{"F", nil},
+		{"G", nil},
+		{"H", nil},
+		{"I", nil},
+		{"J", nil},
 		// Final entry in the second tail-chain.
-		expectedStackEntry{"K", []string{"taillink2", ".."}},
+		{"K", []string{"taillink2", ".."}},
 	}
 
 	testStackContents(t, "initial state", ss, initialState...)

@@ -11,22 +11,22 @@ import (
 	"sync"
 )
 
-func slices_DeleteFunc[S ~[]E, E any](slice S, delFn func(E) bool) S {
+func slices_DeleteFunc[S ~[]E, E any](slice S, delFn func(E) bool) S { //nolint:revive // name is meant to mirror stdlib
 	return slices.DeleteFunc(slice, delFn)
 }
 
-func slices_Contains[S ~[]E, E comparable](slice S, val E) bool {
+func slices_Contains[S ~[]E, E comparable](slice S, val E) bool { //nolint:revive // name is meant to mirror stdlib
 	return slices.Contains(slice, val)
 }
 
-func slices_Clone[S ~[]E, E any](slice S) S {
+func slices_Clone[S ~[]E, E any](slice S) S { //nolint:revive // name is meant to mirror stdlib
 	return slices.Clone(slice)
 }
 
-func sync_OnceValue[T any](f func() T) func() T {
+func sync_OnceValue[T any](f func() T) func() T { //nolint:revive // name is meant to mirror stdlib
 	return sync.OnceValue(f)
 }
 
-func sync_OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) {
+func sync_OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) { //nolint:revive // name is meant to mirror stdlib
 	return sync.OnceValues(f)
 }

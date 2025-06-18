@@ -129,14 +129,10 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		require.NoError(t, err)
 		defer procRoot.Close() //nolint:errcheck // test code
 
-		// We expect to always detect tmpfs overmounts if we have a /proc with
-		// overmounts.
-		detectFdinfo := expectOvermounts
-		testProcThreadSelf(t, procRoot, "fdinfo", detectFdinfo)
-		// We only expect to detect procfs bind-mounts if there are /proc
-		// overmounts and we have openat2.
-		detectAttrCurrent := expectOvermounts && hasOpenat2()
-		testProcThreadSelf(t, procRoot, "attr/current", detectAttrCurrent)
+		// For both tmpfs and procfs overmounts, we should catch them (with or
+		// without openat2, thanks to procfsLookupInRoot).
+		testProcThreadSelf(t, procRoot, "fdinfo", expectOvermounts)
+		testProcThreadSelf(t, procRoot, "attr/current", expectOvermounts)
 
 		// For magic-links we expect to detect overmounts if there are any.
 		symlinkOvermountErr := errUnsafeProcfs

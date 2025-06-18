@@ -6,6 +6,41 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Added ###
+- Previously, the hardened procfs implementation (used internally within
+  `Reopen` and `Open(at)InRoot`) only protected against overmount attacks on
+  systems with `openat2(2)` (Linux 5.6) or systems with `fsopen(2)` or
+  `open_tree(2)` (Linux 4.18) and programs with privileges to use them (with
+  some caveats about locked mounts that probably affect very few users). For
+  other users, an attacker with the ability to create malicious mounts (on most
+  systems, a sysadmin) could trick you into operating on files you didn't
+  expect. This attack only really makes sense in the context of container
+  runtime implementations.
+
+  This was considered a reasonable trade-off, as the long-term intention was to
+  get all users to just switch to [libpathrs][] if they wanted to use the safe
+  `procfs` API (which had more extensive protections, and is what these new
+  protections in `filepath-securejoin` are based on).
+
+  The procfs API will now be more protected against attackers on systems
+  lacking the aforementioned protections. However, the most comprehensive of
+  these protections effectively rely on [`statx(STATX_MNT_ID)`][statx.2] (Linux
+  5.8). On older kernel versions, there is no effective protection (there is
+  some minimal protection against non-`procfs` filesystem components but a
+  sufficiently clever attacker can work around those). In addition,
+  `STATX_MNT_ID` is vulnerable to mount ID reuse attacks by sufficiently
+  motivated and privileged attackers -- this problem is mitigated with
+  `STATX_MNT_ID_UNIQUE` (Linux 6.8) but that raises the minimum kernel version
+  for more protection.
+
+  The fact that these protections are quite limited despite needing a fair bit
+  of extra code to handle was one of the primary reasons we did not initially
+  implement this in `filepath-securejoin` ([libpathrs][] supports all of this,
+  of course).
+
+[libpathrs]: https://github.com/openSUSE/libpathrs
+[statx.2]: https://www.man7.org/linux/man-pages/man2/statx.2.html
+
 ## [0.4.1] - 2025-01-28 ##
 
 ### Fixed ###

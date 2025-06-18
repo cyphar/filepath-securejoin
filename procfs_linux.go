@@ -1,6 +1,6 @@
 //go:build linux
 
-// Copyright (C) 2024 SUSE LLC. All rights reserved.
+// Copyright (C) 2024-2025 SUSE LLC. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -256,58 +256,13 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 		}
 	}
 
-	// Grab the handle.
-	var (
-		handle *os.File
-		err    error
-	)
-	if hasOpenat2() {
-		// We prefer being able to use RESOLVE_NO_XDEV if we can, to be
-		// absolutely sure we are operating on a clean /proc handle that
-		// doesn't have any cheeky overmounts that could trick us (including
-		// symlink mounts on top of /proc/thread-self). RESOLVE_BENEATH isn't
-		// strictly needed, but just use it since we have it.
-		//
-		// NOTE: /proc/self is technically a magic-link (the contents of the
-		//       symlink are generated dynamically), but it doesn't use
-		//       nd_jump_link() so RESOLVE_NO_MAGICLINKS allows it.
-		//
-		// NOTE: We MUST NOT use RESOLVE_IN_ROOT here, as openat2File uses
-		//       procSelfFdReadlink to clean up the returned f.Name() if we use
-		//       RESOLVE_IN_ROOT (which would lead to an infinite recursion).
-		handle, err = openat2File(procRoot, threadSelf+subpath, &unix.OpenHow{
-			Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_CLOEXEC,
-			Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_XDEV | unix.RESOLVE_NO_MAGICLINKS,
-		})
-		if err != nil {
-			// TODO: Once we bump the minimum Go version to 1.20, we can use
-			// multiple %w verbs for this wrapping. For now we need to use a
-			// compatibility shim for older Go versions.
-			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
-		}
-	} else {
-		handle, err = openatFile(procRoot, threadSelf+subpath, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-		if err != nil {
-			// TODO: Once we bump the minimum Go version to 1.20, we can use
-			// multiple %w verbs for this wrapping. For now we need to use a
-			// compatibility shim for older Go versions.
-			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
-		}
-		defer func() {
-			if Err != nil {
-				_ = handle.Close()
-			}
-		}()
-		// We can't detect bind-mounts of different parts of procfs on top of
-		// /proc (a-la RESOLVE_NO_XDEV), but we can at least be sure that we
-		// aren't on the wrong filesystem here.
-		if statfs, err := fstatfs(handle); err != nil {
-			return nil, nil, err
-		} else if statfs.Type != procSuperMagic {
-			return nil, nil, fmt.Errorf("%w: incorrect /proc/self/fd filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
-		}
+	handle, err := procfsLookupInRoot(procRoot, threadSelf+subpath)
+	if err != nil {
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return nil, nil, wrapBaseError(err, errUnsafeProcfs)
 	}
 	return handle, runtime.UnlockOSThread, nil
 }

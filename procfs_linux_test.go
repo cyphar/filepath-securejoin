@@ -114,7 +114,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 				// moved to libpathrs.
 				{"/proc/self/sched", "attr/current", "", unix.MS_BIND},
 				// Bind-mounts on top of symlinks should be detected by
-				// checkSymlinkOvermount.
+				// checkSubpathOvermount.
 				{"/proc/1/fd/0", "exe", "", unix.MS_BIND},
 				{"/proc/1/exe", "fd/0", "", unix.MS_BIND},
 				// TODO: Add a test for mounting on top of /proc/self or
@@ -150,7 +150,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		defer closer()
 
 		// Open these paths directly to emulate a non-openat2 handle that
-		// didn't detect a bind-mount to check that checkSymlinkOvermount works
+		// didn't detect a bind-mount to check that checkSubpathOvermount works
 		// properly for AT_EMPTY_PATH checks as well.
 		procCwd, err := openatFile(procSelf, "cwd", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
@@ -160,14 +160,14 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		defer procExe.Close() //nolint:errcheck // test code
 
 		// no overmount
-		err = checkSymlinkOvermount(procRoot, procCwd, "")
+		err = checkSubpathOvermount(procRoot, procCwd, "")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSymlinkOvermount(procRoot, procSelf, "cwd")
+		err = checkSubpathOvermount(procRoot, procSelf, "cwd")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// basic overmount
-		err = checkSymlinkOvermount(procRoot, procExe, "")
+		err = checkSubpathOvermount(procRoot, procExe, "")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSymlinkOvermount(procRoot, procSelf, "exe")
+		err = checkSubpathOvermount(procRoot, procSelf, "exe")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// fd no overmount

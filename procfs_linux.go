@@ -347,7 +347,7 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 	return stx.Mnt_id, nil
 }
 
-func checkSymlinkOvermount(procRoot *os.File, dir *os.File, path string) error {
+func checkSubpathOvermount(procRoot *os.File, dir *os.File, path string) error {
 	// Get the mntID of our procfs handle.
 	expectedMountID, err := getMountID(procRoot, "")
 	if err != nil {
@@ -363,7 +363,7 @@ func checkSymlinkOvermount(procRoot *os.File, dir *os.File, path string) error {
 	// using unsafeHostProcRoot() then an attaker could change this after we
 	// did this check.)
 	if expectedMountID != gotMountID {
-		return fmt.Errorf("%w: symlink %s/%s has an overmount obscuring the real link (mount ids do not match %d != %d)", errUnsafeProcfs, dir.Name(), path, expectedMountID, gotMountID)
+		return fmt.Errorf("%w: subpath %s/%s has an overmount obscuring the real link (mount ids do not match %d != %d)", errUnsafeProcfs, dir.Name(), path, expectedMountID, gotMountID)
 	}
 	return nil
 }
@@ -386,7 +386,7 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 	//
 	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
 	// onto targets that reside on shared mounts").
-	if err := checkSymlinkOvermount(procRoot, procFdLink, ""); err != nil {
+	if err := checkSubpathOvermount(procRoot, procFdLink, ""); err != nil {
 		return "", fmt.Errorf("check safety of /proc/thread-self/fd/%d magiclink: %w", fd, err)
 	}
 

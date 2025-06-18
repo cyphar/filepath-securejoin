@@ -333,7 +333,12 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 	if stx.Mask&wantStxMask == 0 {
 		// It's not a kernel limitation, for some reason we couldn't get a
 		// mount ID. Assume it's some kind of attack.
-		err = fmt.Errorf("%w: could not get mount id", errUnsafeProcfs)
+		//
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: could not get mount id: %w", errUnsafeProcfs, err)
+		err = wrapBaseError(fmt.Errorf("could not get mount id: %w", err), errUnsafeProcfs)
 	}
 	if err != nil {
 		return 0, &os.PathError{Op: "statx(STATX_MNT_ID_...)", Path: fullPath, Err: err}

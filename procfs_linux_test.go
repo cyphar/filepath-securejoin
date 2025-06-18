@@ -386,37 +386,43 @@ func TestProcSelfFdPath_DeadDir(t *testing.T) {
 	})
 }
 
-func testVerifyProcRoot(t *testing.T, procRoot string, expectedErr error, errString string) {
+func testVerifyProcRoot(t *testing.T, procRoot string, expectedHandleErr, expectedRootErr error, errString string) {
 	fakeProcRoot, err := os.OpenFile(procRoot, unix.O_PATH|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
 	defer fakeProcRoot.Close() //nolint:errcheck // test code
 
 	err = verifyProcRoot(fakeProcRoot)
-	require.ErrorIsf(t, err, expectedErr, "verifyProcRoot(%s)", procRoot)
-	if expectedErr != nil {
+	require.ErrorIsf(t, err, expectedRootErr, "verifyProcRoot(%s)", procRoot)
+	if expectedRootErr != nil {
 		require.ErrorContainsf(t, err, errString, "verifyProcRoot(%s)", procRoot)
+	}
+
+	err = verifyProcHandle(fakeProcRoot)
+	require.ErrorIsf(t, err, expectedHandleErr, "verifyProcHandle(%s)", procRoot)
+	if expectedHandleErr != nil {
+		require.ErrorContainsf(t, err, errString, "verifyProcHandle(%s)", procRoot)
 	}
 }
 
 func TestVerifyProcRoot_Regular(t *testing.T) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
-		testVerifyProcRoot(t, "/proc", nil, "")
+		testVerifyProcRoot(t, "/proc", nil, nil, "")
 	})
 }
 
 func TestVerifyProcRoot_ProcNonRoot(t *testing.T) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
-		testVerifyProcRoot(t, "/proc/self", errUnsafeProcfs, "incorrect procfs root inode number")
-		testVerifyProcRoot(t, "/proc/mounts", errUnsafeProcfs, "incorrect procfs root inode number")
-		testVerifyProcRoot(t, "/proc/stat", errUnsafeProcfs, "incorrect procfs root inode number")
+		testVerifyProcRoot(t, "/proc/self", nil, errUnsafeProcfs, "incorrect procfs root inode number")
+		testVerifyProcRoot(t, "/proc/mounts", nil, errUnsafeProcfs, "incorrect procfs root inode number")
+		testVerifyProcRoot(t, "/proc/stat", nil, errUnsafeProcfs, "incorrect procfs root inode number")
 	})
 }
 
 func TestVerifyProcRoot_NotProc(t *testing.T) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
-		testVerifyProcRoot(t, "/", errUnsafeProcfs, "incorrect procfs root filesystem type")
-		testVerifyProcRoot(t, ".", errUnsafeProcfs, "incorrect procfs root filesystem type")
-		testVerifyProcRoot(t, t.TempDir(), errUnsafeProcfs, "incorrect procfs root filesystem type")
+		testVerifyProcRoot(t, "/", errUnsafeProcfs, errUnsafeProcfs, "incorrect procfs root filesystem type")
+		testVerifyProcRoot(t, ".", errUnsafeProcfs, errUnsafeProcfs, "incorrect procfs root filesystem type")
+		testVerifyProcRoot(t, t.TempDir(), errUnsafeProcfs, errUnsafeProcfs, "incorrect procfs root filesystem type")
 	})
 }
 

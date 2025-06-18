@@ -39,11 +39,24 @@ const (
 	procRootIno    = 1      // PROC_ROOT_INO
 )
 
-func verifyProcRoot(procRoot *os.File) error {
-	if statfs, err := fstatfs(procRoot); err != nil {
+// verifyProcHandle checks that the handle is from a procfs filesystem.
+// Contrast this to [verifyProcRoot], which also verifies that the handle is
+// the root of a procfs mount.
+func verifyProcHandle(procHandle *os.File) error {
+	if statfs, err := fstatfs(procHandle); err != nil {
 		return err
 	} else if statfs.Type != procSuperMagic {
 		return fmt.Errorf("%w: incorrect procfs root filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
+	}
+	return nil
+}
+
+// verifyProcRoot verifies that the handle is the root of a procfs filesystem.
+// Contrast this to [verifyProcHandle], which only verifies if the handle is
+// some file on procfs (regardless of what file it is).
+func verifyProcRoot(procRoot *os.File) error {
+	if err := verifyProcHandle(procRoot); err != nil {
+		return err
 	}
 	if stat, err := fstat(procRoot); err != nil {
 		return err

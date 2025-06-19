@@ -1,6 +1,6 @@
 //go:build linux
 
-// Copyright (C) 2024 SUSE LLC. All rights reserved.
+// Copyright (C) 2024-2025 SUSE LLC. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -39,11 +39,24 @@ const (
 	procRootIno    = 1      // PROC_ROOT_INO
 )
 
-func verifyProcRoot(procRoot *os.File) error {
-	if statfs, err := fstatfs(procRoot); err != nil {
+// verifyProcHandle checks that the handle is from a procfs filesystem.
+// Contrast this to [verifyProcRoot], which also verifies that the handle is
+// the root of a procfs mount.
+func verifyProcHandle(procHandle *os.File) error {
+	if statfs, err := fstatfs(procHandle); err != nil {
 		return err
 	} else if statfs.Type != procSuperMagic {
 		return fmt.Errorf("%w: incorrect procfs root filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
+	}
+	return nil
+}
+
+// verifyProcRoot verifies that the handle is the root of a procfs filesystem.
+// Contrast this to [verifyProcHandle], which only verifies if the handle is
+// some file on procfs (regardless of what file it is).
+func verifyProcRoot(procRoot *os.File) error {
+	if err := verifyProcHandle(procRoot); err != nil {
+		return err
 	}
 	if stat, err := fstat(procRoot); err != nil {
 		return err
@@ -197,24 +210,30 @@ var hasProcThreadSelf = sync_OnceValue(func() bool {
 
 var errUnsafeProcfs = errors.New("unsafe procfs detected")
 
-type procThreadSelfCloser func()
+// ProcThreadSelfCloser is a callback that needs to be called when you are done
+// operating on an [os.File] fetched using [ProcThreadSelf].
+//
+// [os.File]: https://pkg.go.dev/os#File
+type ProcThreadSelfCloser func()
 
-// procThreadSelf returns a handle to /proc/thread-self/<subpath> (or an
-// equivalent handle on older kernels where /proc/thread-self doesn't exist).
-// Once finished with the handle, you must call the returned closer function
-// (runtime.UnlockOSThread). You must not pass the returned *os.File to other
-// Go threads or use the handle after calling the closer.
-//
-// This is similar to ProcThreadSelf from runc, but with extra hardening
-// applied and using *os.File.
-//
 // NOTE: THIS IS NOT YET SAFE TO EXPORT. The non-openat2(2) case is just using
 // a plain openat(2), which is not entirely safe against overmount attacks.
 // Yes, if we are using fsopen(2) or open_tree(2) (without AT_RECURSIVE), then
 // this is safe, but we shouldn't make less privileged users (or users on older
 // kernels) incorrectly assume this is safe. libpathrs does it correctly, and
 // it's best to leave it to them.
-func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThreadSelfCloser, Err error) {
+func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThreadSelfCloser, Err error) {
+	// If called from the external API, procRoot will be nil, so just get the
+	// global root handle. It's also possible one of our tests calls this with
+	// nil by accident, so we should handle the case anyway.
+	if procRoot == nil {
+		root, err := getProcRoot()
+		if err != nil {
+			return nil, nil, err
+		}
+		procRoot = root
+	}
+
 	// We need to lock our thread until the caller is done with the handle
 	// because between getting the handle and using it we could get interrupted
 	// by the Go runtime and hit the case where the underlying thread is
@@ -243,60 +262,27 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ procThread
 		}
 	}
 
-	// Grab the handle.
-	var (
-		handle *os.File
-		err    error
-	)
-	if hasOpenat2() {
-		// We prefer being able to use RESOLVE_NO_XDEV if we can, to be
-		// absolutely sure we are operating on a clean /proc handle that
-		// doesn't have any cheeky overmounts that could trick us (including
-		// symlink mounts on top of /proc/thread-self). RESOLVE_BENEATH isn't
-		// strictly needed, but just use it since we have it.
-		//
-		// NOTE: /proc/self is technically a magic-link (the contents of the
-		//       symlink are generated dynamically), but it doesn't use
-		//       nd_jump_link() so RESOLVE_NO_MAGICLINKS allows it.
-		//
-		// NOTE: We MUST NOT use RESOLVE_IN_ROOT here, as openat2File uses
-		//       procSelfFdReadlink to clean up the returned f.Name() if we use
-		//       RESOLVE_IN_ROOT (which would lead to an infinite recursion).
-		handle, err = openat2File(procRoot, threadSelf+subpath, &unix.OpenHow{
-			Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_CLOEXEC,
-			Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_XDEV | unix.RESOLVE_NO_MAGICLINKS,
-		})
-		if err != nil {
-			// TODO: Once we bump the minimum Go version to 1.20, we can use
-			// multiple %w verbs for this wrapping. For now we need to use a
-			// compatibility shim for older Go versions.
-			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
-		}
-	} else {
-		handle, err = openatFile(procRoot, threadSelf+subpath, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-		if err != nil {
-			// TODO: Once we bump the minimum Go version to 1.20, we can use
-			// multiple %w verbs for this wrapping. For now we need to use a
-			// compatibility shim for older Go versions.
-			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-			return nil, nil, wrapBaseError(err, errUnsafeProcfs)
-		}
-		defer func() {
-			if Err != nil {
-				_ = handle.Close()
-			}
-		}()
-		// We can't detect bind-mounts of different parts of procfs on top of
-		// /proc (a-la RESOLVE_NO_XDEV), but we can at least be sure that we
-		// aren't on the wrong filesystem here.
-		if statfs, err := fstatfs(handle); err != nil {
-			return nil, nil, err
-		} else if statfs.Type != procSuperMagic {
-			return nil, nil, fmt.Errorf("%w: incorrect /proc/self/fd filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
-		}
+	handle, err := procfsLookupInRoot(procRoot, threadSelf+subpath)
+	if err != nil {
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return nil, nil, wrapBaseError(err, errUnsafeProcfs)
 	}
 	return handle, runtime.UnlockOSThread, nil
+}
+
+// ProcThreadSelf returns a handle to /proc/thread-self/<subpath> (or an
+// equivalent handle on older kernels where /proc/thread-self doesn't exist).
+// Once finished with the handle, you must call the returned closer function
+// (runtime.UnlockOSThread). You must not pass the returned *os.File to other
+// Go threads or use the handle after calling the closer.
+//
+// This is similar to ProcThreadSelf from runc, but with extra hardening
+// applied and using *os.File.
+func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
+	return procThreadSelf(nil, subpath)
 }
 
 // STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
@@ -333,7 +319,12 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 	if stx.Mask&wantStxMask == 0 {
 		// It's not a kernel limitation, for some reason we couldn't get a
 		// mount ID. Assume it's some kind of attack.
-		err = fmt.Errorf("%w: could not get mount id", errUnsafeProcfs)
+		//
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: could not get mount id: %w", errUnsafeProcfs, err)
+		err = wrapBaseError(fmt.Errorf("could not get mount id: %w", err), errUnsafeProcfs)
 	}
 	if err != nil {
 		return 0, &os.PathError{Op: "statx(STATX_MNT_ID_...)", Path: fullPath, Err: err}
@@ -342,7 +333,7 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 	return stx.Mnt_id, nil
 }
 
-func checkSymlinkOvermount(procRoot *os.File, dir *os.File, path string) error {
+func checkSubpathOvermount(procRoot *os.File, dir *os.File, path string) error {
 	// Get the mntID of our procfs handle.
 	expectedMountID, err := getMountID(procRoot, "")
 	if err != nil {
@@ -358,7 +349,7 @@ func checkSymlinkOvermount(procRoot *os.File, dir *os.File, path string) error {
 	// using unsafeHostProcRoot() then an attaker could change this after we
 	// did this check.)
 	if expectedMountID != gotMountID {
-		return fmt.Errorf("%w: symlink %s/%s has an overmount obscuring the real link (mount ids do not match %d != %d)", errUnsafeProcfs, dir.Name(), path, expectedMountID, gotMountID)
+		return fmt.Errorf("%w: subpath %s/%s has an overmount obscuring the real link (mount ids do not match %d != %d)", errUnsafeProcfs, dir.Name(), path, expectedMountID, gotMountID)
 	}
 	return nil
 }
@@ -381,7 +372,7 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 	//
 	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
 	// onto targets that reside on shared mounts").
-	if err := checkSymlinkOvermount(procRoot, procFdLink, ""); err != nil {
+	if err := checkSubpathOvermount(procRoot, procFdLink, ""); err != nil {
 		return "", fmt.Errorf("check safety of /proc/thread-self/fd/%d magiclink: %w", fd, err)
 	}
 
@@ -399,7 +390,10 @@ func rawProcSelfFdReadlink(fd int) (string, error) {
 	return doRawProcSelfFdReadlink(procRoot, fd)
 }
 
-func procSelfFdReadlink(f *os.File) (string, error) {
+// ProcSelfFdReadlink gets the real path of the given file by looking at
+// readlink(/proc/thread-self/fd/$n), with the same safety protections as
+// [ProcThreadSelf] (as well as some additional checks against overmounts).
+func ProcSelfFdReadlink(f *os.File) (string, error) {
 	return rawProcSelfFdReadlink(int(f.Fd()))
 }
 
@@ -431,7 +425,7 @@ func checkProcSelfFdPath(path string, file *os.File) error {
 	if err := isDeadInode(file); err != nil {
 		return err
 	}
-	actualPath, err := procSelfFdReadlink(file)
+	actualPath, err := ProcSelfFdReadlink(file)
 	if err != nil {
 		return fmt.Errorf("get path of handle: %w", err)
 	}

@@ -77,8 +77,15 @@ func setupMountNamespace(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func doProcThreadSelf(procRoot *os.File, subpath string) (*os.File, ProcThreadSelfCloser, error) {
+	if procRoot != nil {
+		return procThreadSelf(procRoot, subpath)
+	}
+	return ProcThreadSelf(subpath)
+}
+
 func testProcThreadSelf(t *testing.T, procRoot *os.File, subpath string, expectErr bool) {
-	handle, closer, err := procThreadSelf(procRoot, subpath)
+	handle, closer, err := doProcThreadSelf(procRoot, subpath)
 	if expectErr {
 		assert.ErrorIsf(t, err, errUnsafeProcfs, "should have detected /proc/thread-self/%s overmount", subpath)
 	} else if assert.NoErrorf(t, err, "/proc/thread-self/%s open should succeed", subpath) {
@@ -114,7 +121,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 				// moved to libpathrs.
 				{"/proc/self/sched", "attr/current", "", unix.MS_BIND},
 				// Bind-mounts on top of symlinks should be detected by
-				// checkSymlinkOvermount.
+				// checkSubpathOvermount.
 				{"/proc/1/fd/0", "exe", "", unix.MS_BIND},
 				{"/proc/1/exe", "fd/0", "", unix.MS_BIND},
 				// TODO: Add a test for mounting on top of /proc/self or
@@ -127,16 +134,14 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 
 		procRoot, err := procRootFn()
 		require.NoError(t, err)
-		defer procRoot.Close() //nolint:errcheck // test code
+		if procRoot != nil {
+			defer procRoot.Close() //nolint:errcheck // test code
+		}
 
-		// We expect to always detect tmpfs overmounts if we have a /proc with
-		// overmounts.
-		detectFdinfo := expectOvermounts
-		testProcThreadSelf(t, procRoot, "fdinfo", detectFdinfo)
-		// We only expect to detect procfs bind-mounts if there are /proc
-		// overmounts and we have openat2.
-		detectAttrCurrent := expectOvermounts && hasOpenat2()
-		testProcThreadSelf(t, procRoot, "attr/current", detectAttrCurrent)
+		// For both tmpfs and procfs overmounts, we should catch them (with or
+		// without openat2, thanks to procfsLookupInRoot).
+		testProcThreadSelf(t, procRoot, "fdinfo", expectOvermounts)
+		testProcThreadSelf(t, procRoot, "attr/current", expectOvermounts)
 
 		// For magic-links we expect to detect overmounts if there are any.
 		symlinkOvermountErr := errUnsafeProcfs
@@ -144,13 +149,13 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 			symlinkOvermountErr = nil
 		}
 
-		procSelf, closer, err := procThreadSelf(procRoot, ".")
+		procSelf, closer, err := doProcThreadSelf(procRoot, ".")
 		require.NoError(t, err)
 		defer procSelf.Close() //nolint:errcheck // test code
 		defer closer()
 
 		// Open these paths directly to emulate a non-openat2 handle that
-		// didn't detect a bind-mount to check that checkSymlinkOvermount works
+		// didn't detect a bind-mount to check that checkSubpathOvermount works
 		// properly for AT_EMPTY_PATH checks as well.
 		procCwd, err := openatFile(procSelf, "cwd", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
@@ -159,22 +164,31 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		require.NoError(t, err)
 		defer procExe.Close() //nolint:errcheck // test code
 
+		// Get the handle that doProcThreadSelf is using internally when we
+		// test the external API.
+		testProcRoot := procRoot
+		if testProcRoot == nil {
+			testProcRoot, err = getProcRoot()
+			require.NoError(t, err)
+			// do not call testProcRoot.Close() -- it's a global handle
+		}
+
 		// no overmount
-		err = checkSymlinkOvermount(procRoot, procCwd, "")
+		err = checkSubpathOvermount(testProcRoot, procCwd, "")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSymlinkOvermount(procRoot, procSelf, "cwd")
+		err = checkSubpathOvermount(testProcRoot, procSelf, "cwd")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// basic overmount
-		err = checkSymlinkOvermount(procRoot, procExe, "")
+		err = checkSubpathOvermount(testProcRoot, procExe, "")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSymlinkOvermount(procRoot, procSelf, "exe")
+		err = checkSubpathOvermount(testProcRoot, procSelf, "exe")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// fd no overmount
-		_, err = doRawProcSelfFdReadlink(procRoot, 1)
+		_, err = doRawProcSelfFdReadlink(testProcRoot, 1)
 		assert.NoError(t, err, "checking /proc/self/fd/1 with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// fd overmount
-		link, err := doRawProcSelfFdReadlink(procRoot, 0)
+		link, err := doRawProcSelfFdReadlink(testProcRoot, 0)
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/fd/0 overmount result: got link %q", link) //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
@@ -225,6 +239,29 @@ func TestProcOvermountSubdir_doGetProcRoot_Mocked(t *testing.T) {
 		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
 			testProcOvermountSubdir(t, doGetProcRoot, expectOvermounts)
 		})
+	})
+}
+
+func TestProcOvermountSubdir_ProcThreadSelf(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		testForceProcThreadSelf(t, func(t *testing.T) {
+			dummyGetRoot := func() (*os.File, error) { return nil, nil } //nolint:nilnil // intentional
+			// Use the same overmounts policy as doGetProcRoot.
+			testProcOvermountSubdir(t, dummyGetRoot, !hasNewMountAPI())
+		})
+	})
+}
+
+// Because of the introduction of protections against /proc overmounts,
+// ProcThreadSelf will not be called in actual tests unless we have a basic
+// test here.
+func TestProcThreadSelf(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		handle, closer, err := ProcThreadSelf("stat")
+		require.NoError(t, err, "ProcThreadSelf(stat)")
+		require.NotNil(t, handle, "ProcThreadSelf(stat)")
+		defer closer()
+		defer handle.Close() //nolint:errcheck // test code
 	})
 }
 
@@ -386,37 +423,43 @@ func TestProcSelfFdPath_DeadDir(t *testing.T) {
 	})
 }
 
-func testVerifyProcRoot(t *testing.T, procRoot string, expectedErr error, errString string) {
+func testVerifyProcRoot(t *testing.T, procRoot string, expectedHandleErr, expectedRootErr error, errString string) {
 	fakeProcRoot, err := os.OpenFile(procRoot, unix.O_PATH|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
 	defer fakeProcRoot.Close() //nolint:errcheck // test code
 
 	err = verifyProcRoot(fakeProcRoot)
-	require.ErrorIsf(t, err, expectedErr, "verifyProcRoot(%s)", procRoot)
-	if expectedErr != nil {
+	require.ErrorIsf(t, err, expectedRootErr, "verifyProcRoot(%s)", procRoot)
+	if expectedRootErr != nil {
 		require.ErrorContainsf(t, err, errString, "verifyProcRoot(%s)", procRoot)
+	}
+
+	err = verifyProcHandle(fakeProcRoot)
+	require.ErrorIsf(t, err, expectedHandleErr, "verifyProcHandle(%s)", procRoot)
+	if expectedHandleErr != nil {
+		require.ErrorContainsf(t, err, errString, "verifyProcHandle(%s)", procRoot)
 	}
 }
 
 func TestVerifyProcRoot_Regular(t *testing.T) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
-		testVerifyProcRoot(t, "/proc", nil, "")
+		testVerifyProcRoot(t, "/proc", nil, nil, "")
 	})
 }
 
 func TestVerifyProcRoot_ProcNonRoot(t *testing.T) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
-		testVerifyProcRoot(t, "/proc/self", errUnsafeProcfs, "incorrect procfs root inode number")
-		testVerifyProcRoot(t, "/proc/mounts", errUnsafeProcfs, "incorrect procfs root inode number")
-		testVerifyProcRoot(t, "/proc/stat", errUnsafeProcfs, "incorrect procfs root inode number")
+		testVerifyProcRoot(t, "/proc/self", nil, errUnsafeProcfs, "incorrect procfs root inode number")
+		testVerifyProcRoot(t, "/proc/mounts", nil, errUnsafeProcfs, "incorrect procfs root inode number")
+		testVerifyProcRoot(t, "/proc/stat", nil, errUnsafeProcfs, "incorrect procfs root inode number")
 	})
 }
 
 func TestVerifyProcRoot_NotProc(t *testing.T) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
-		testVerifyProcRoot(t, "/", errUnsafeProcfs, "incorrect procfs root filesystem type")
-		testVerifyProcRoot(t, ".", errUnsafeProcfs, "incorrect procfs root filesystem type")
-		testVerifyProcRoot(t, t.TempDir(), errUnsafeProcfs, "incorrect procfs root filesystem type")
+		testVerifyProcRoot(t, "/", errUnsafeProcfs, errUnsafeProcfs, "incorrect procfs root filesystem type")
+		testVerifyProcRoot(t, ".", errUnsafeProcfs, errUnsafeProcfs, "incorrect procfs root filesystem type")
+		testVerifyProcRoot(t, t.TempDir(), errUnsafeProcfs, errUnsafeProcfs, "incorrect procfs root filesystem type")
 	})
 }
 

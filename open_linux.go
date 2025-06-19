@@ -88,7 +88,7 @@ func Reopen(handle *os.File, flags int) (*os.File, error) {
 	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
 	// onto targets that reside on shared mounts").
 	fdStr := strconv.Itoa(int(handle.Fd()))
-	if err := checkSymlinkOvermount(procRoot, procFdDir, fdStr); err != nil {
+	if err := checkSubpathOvermount(procRoot, procFdDir, fdStr); err != nil {
 		return nil, fmt.Errorf("check safety of /proc/thread-self/fd/%s magiclink: %w", fdStr, err)
 	}
 

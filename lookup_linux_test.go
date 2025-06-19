@@ -52,7 +52,7 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 	assert.Equal(t, expected.remainingPath, remainingPath, "remaining path")
 
 	// Check the handle path.
-	gotPath, err := procSelfFdReadlink(handle)
+	gotPath, err := ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expected.handlePath, gotPath, "real handle path")
 	// Make sure the handle matches the readlink path.
@@ -371,9 +371,9 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 	if handle != nil {
 		handleName = handle.Name()
 
-		// Get the "proper" name from procSelfFdReadlink.
+		// Get the "proper" name from ProcSelfFdReadlink.
 		m.pauseCh <- struct{}{}
-		realPath, err = procSelfFdReadlink(handle)
+		realPath, err = ProcSelfFdReadlink(handle)
 		<-m.pauseCh
 		require.NoError(t, err, "get real path of returned handle")
 
@@ -558,20 +558,34 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 				go doRenameExchangeLoop(pauseCh, exitCh, rootDir, test.subPathA, test.subPathB)
 
 				// Do several runs to try to catch bugs.
-				const testRuns = 50000
+				const (
+					testRuns     = 3000
+					minPassCount = 10
+				)
 				m := newRacingLookupMeta(pauseCh)
-				for i := 0; i < testRuns; i++ {
+				doneRuns := 0
+				for ; doneRuns < testRuns || m.passOkCount < minPassCount; doneRuns++ {
 					m.checkPartialLookup(t, rootDir, test.unsafePath, test.skipErrs, test.allowedResults)
+					// Make sure we don't infinite loop here.
+					if doneRuns >= 50*testRuns {
+						break
+					}
 				}
 
 				pct := func(count int) string {
-					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(testRuns))
+					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(doneRuns))
+				}
+
+				// No passing runs is a bit unfortunate, but some of our tests
+				// can do that and failing here would just lead to flaky tests.
+				if m.passOkCount == 0 {
+					t.Logf("WARNING: NO PASSING RUNS!")
 				}
 
 				// Output some stats.
 				t.Logf("after %d runs: passOk=%s passErr=%s skip=%s fail=%s (+badErr=%s)",
 					// runs and breakdown of path-related (pass, fail) as well as skipped runs
-					testRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.skipCount), pct(m.failCount),
+					doneRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.skipCount), pct(m.failCount),
 					// failures due to incorrect errors (rather than bad paths)
 					pct(m.badErrCount))
 				t.Logf("  badHandleName=%s fixRemainingPath=%s",

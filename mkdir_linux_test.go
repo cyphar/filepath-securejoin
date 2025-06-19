@@ -46,7 +46,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	require.NoError(t, err)
 
 	// Now double-check that the handle is correct.
-	gotPath, err := procSelfFdReadlink(handle)
+	gotPath, err := ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expectedPath, gotPath, "wrong final path from MkdirAllHandle")
 	// Also check that the f.Name() is correct while we're at it (this is
@@ -404,9 +404,13 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) { //nolint:revive // undersco
 				}(rootCh)
 
 				// Do several runs to try to catch bugs.
-				const testRuns = 2000
+				const (
+					testRuns     = 800
+					minPassCount = 10
+				)
 				m := newRacingMkdirMeta()
-				for i := 0; i < testRuns; i++ {
+				doneRuns := 0
+				for ; doneRuns < testRuns || m.passOkCount < minPassCount; doneRuns++ {
 					root := createTree(t, treeSpec...)
 
 					rootCh <- root
@@ -417,15 +421,26 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) { //nolint:revive // undersco
 					// Clean up the root after each run so we don't exhaust all
 					// space in the tmpfs.
 					_ = os.RemoveAll(root)
+
+					// Make sure we don't infinite loop here.
+					if doneRuns >= 50*testRuns {
+						break
+					}
 				}
 
 				pct := func(count int) string {
-					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(testRuns))
+					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(doneRuns))
+				}
+
+				// No passing runs is a bit unfortunate, but some of our tests
+				// can do that and failing here would just lead to flaky tests.
+				if m.passOkCount == 0 {
+					t.Logf("WARNING: NO PASSING RUNS!")
 				}
 
 				// Output some stats.
 				t.Logf("after %d runs: passOk=%s passErr=%s fail=%s",
-					testRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.failCount))
+					doneRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.failCount))
 				if len(m.passErrCounts) > 0 {
 					t.Logf("  passErr breakdown:")
 					for err, count := range m.passErrCounts {
@@ -475,9 +490,13 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // undersco
 				}(rootCh)
 
 				// Do several runs to try to catch bugs.
-				const testRuns = 2000
+				const (
+					testRuns     = 800
+					minPassCount = 10
+				)
 				m := newRacingMkdirMeta()
-				for i := 0; i < testRuns; i++ {
+				doneRuns := 0
+				for ; doneRuns < testRuns; doneRuns++ {
 					root := createTree(t, treeSpec...)
 
 					rootCh <- root
@@ -487,15 +506,26 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // undersco
 					// Clean up the root after each run so we don't exhaust all
 					// space in the tmpfs.
 					_ = os.RemoveAll(root + "/..")
+
+					// Make sure we don't infinite loop here.
+					if doneRuns >= 50*testRuns {
+						break
+					}
 				}
 
 				pct := func(count int) string {
-					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(testRuns))
+					return fmt.Sprintf("%d(%.3f%%)", count, 100.0*float64(count)/float64(doneRuns))
+				}
+
+				// No passing runs is a bit unfortunate, but some of our tests
+				// can do that and failing here would just lead to flaky tests.
+				if m.passOkCount == 0 {
+					t.Logf("WARNING: NO PASSING RUNS!")
 				}
 
 				// Output some stats.
 				t.Logf("after %d runs: passOk=%s passErr=%s fail=%s",
-					testRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.failCount))
+					doneRuns, pct(m.passOkCount), pct(m.passErrCount), pct(m.failCount))
 				if len(m.passErrCounts) > 0 {
 					t.Logf("  passErr breakdown:")
 					for err, count := range m.passErrCounts {

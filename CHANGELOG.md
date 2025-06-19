@@ -6,6 +6,80 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Added ###
+- Some minimal parts of the safe `procfs` API have now been exposed. At the
+  moment these include:
+
+   * `ProcThreadSelf` which allows you to get a safe handle `O_PATH` to a
+     subpath in `/proc/thread-self` (you can upgrade it to a proper handle with
+     `Reopen` like any other `O_PATH` handle). The returned
+     `ProcThreadSelfCloser` needs to be called after you completely finish
+     using the handle (this is necessary because Go is multi-threaded and
+     `ProcThreadSelf` references `/proc/thread-self` which may disappear if we
+     do not `runtime.LockOSThread` -- `ProcThreadSelfCloser` is currently
+     equivalent to `runtime.UnlockOSThread`).
+
+     Note that you cannot operate on any `procfs` symlinks (most notably
+     magiclinks) using this API. At the moment `filepath-securejoin` does not
+     support this feature (but [libpathrs][] does).
+
+   * `ProcSelfFdReadlink` lets you get the in-kernel path representation of a
+     file descriptor (think `readlink("/proc/self/fd/...")`). This is
+     equivalent to doing a `readlinkat(fd, "", ...)` of
+     `ProcThreadSelf("fd/%d")`, except that we verify that there aren't any
+     tricky overmounts that could fool the process.
+
+     Please be aware that the returned string is simply a snapshot at that
+     particular moment, and an attacker could move the file being pointed to.
+     In addition, complex namespace configurations could result in non-sensical
+     or confusing paths to be returned. The value received from this function
+     should only be used as secondary verification of some security property,
+     not as proof that a particular handle has a particular path.
+
+  The procfs handle used internally by the API is the same as the rest of
+  `filepath-securejoin` (for privileged programs this is usually a private
+  in-process `procfs` instance created with `fsopen(2)`).
+
+  As before, this is intended as a stop-gap before users migrate to
+  [libpathrs][], which provides a far more extensive safe `procfs` API and is
+  generally more robust.
+
+- Previously, the hardened procfs implementation (used internally within
+  `Reopen` and `Open(at)InRoot`) only protected against overmount attacks on
+  systems with `openat2(2)` (Linux 5.6) or systems with `fsopen(2)` or
+  `open_tree(2)` (Linux 4.18) and programs with privileges to use them (with
+  some caveats about locked mounts that probably affect very few users). For
+  other users, an attacker with the ability to create malicious mounts (on most
+  systems, a sysadmin) could trick you into operating on files you didn't
+  expect. This attack only really makes sense in the context of container
+  runtime implementations.
+
+  This was considered a reasonable trade-off, as the long-term intention was to
+  get all users to just switch to [libpathrs][] if they wanted to use the safe
+  `procfs` API (which had more extensive protections, and is what these new
+  protections in `filepath-securejoin` are based on). However, as the API
+  is now being exported it seems unwise to advertise the API as "safe" if we do
+  not protect against known attacks.
+
+  The procfs API will now be more protected against attackers on systems
+  lacking the aforementioned protections. However, the most comprehensive of
+  these protections effectively rely on [`statx(STATX_MNT_ID)`][statx.2] (Linux
+  5.8). On older kernel versions, there is no effective protection (there is
+  some minimal protection against non-`procfs` filesystem components but a
+  sufficiently clever attacker can work around those). In addition,
+  `STATX_MNT_ID` is vulnerable to mount ID reuse attacks by sufficiently
+  motivated and privileged attackers -- this problem is mitigated with
+  `STATX_MNT_ID_UNIQUE` (Linux 6.8) but that raises the minimum kernel version
+  for more protection.
+
+  The fact that these protections are quite limited despite needing a fair bit
+  of extra code to handle was one of the primary reasons we did not initially
+  implement this in `filepath-securejoin` ([libpathrs][] supports all of this,
+  of course).
+
+[libpathrs]: https://github.com/openSUSE/libpathrs
+[statx.2]: https://www.man7.org/linux/man-pages/man2/statx.2.html
+
 ## [0.4.1] - 2025-01-28 ##
 
 ### Fixed ###

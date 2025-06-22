@@ -279,6 +279,34 @@ func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
 	return procThreadSelf(nil, subpath)
 }
 
+// ProcPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
+// You should not use this for the current thread, as special handling is
+// needed for /proc/thread-self (or /proc/self/task/<tid>) when dealing with
+// goroutine scheduling -- use [ProcThreadSelf] instead. This is mainly
+// intended for usage when operating on other processes.
+//
+// You should not try to operate on the top-level /proc handle (such as by
+// setting subpath to "../foo"). This will not work at all on non-openat2
+// systems, and when using an internal fsopen-based handle, the mount will have
+// subset=pids and hidepid=traceable set (which will restrict what PIDs can be
+// accessed with this API, as well as removing any non-PID procfs files).
+func ProcPid(pid int, subpath string) (*os.File, error) {
+	procRoot, err := getProcRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	handle, err := procfsLookupInRoot(procRoot, strconv.Itoa(pid)+"/"+subpath)
+	if err != nil {
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return nil, wrapBaseError(err, errUnsafeProcfs)
+	}
+	return handle, nil
+}
+
 // STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
 // avoid bumping the requirement for a single constant we can just define it
 // ourselves.

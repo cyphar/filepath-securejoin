@@ -257,11 +257,61 @@ func TestProcOvermountSubdir_ProcThreadSelf(t *testing.T) {
 // test here.
 func TestProcThreadSelf(t *testing.T) {
 	withWithoutOpenat2(t, true, func(t *testing.T) {
-		handle, closer, err := ProcThreadSelf("stat")
-		require.NoError(t, err, "ProcThreadSelf(stat)")
-		require.NotNil(t, handle, "ProcThreadSelf(stat)")
-		defer closer()
-		defer handle.Close() //nolint:errcheck // test code
+		t.Run("stat", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("stat")
+			require.NoError(t, err, "ProcThreadSelf(stat)")
+			require.NotNil(t, handle, "ProcThreadSelf(stat) handle")
+			require.NotNil(t, closer, "ProcThreadSelf(stat) closer")
+			defer closer()
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/proc/%d/task/%d/stat", os.Getpid(), unix.Gettid())
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("abspath", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("/stat")
+			require.NoError(t, err, "ProcThreadSelf(/stat)")
+			require.NotNil(t, handle, "ProcThreadSelf(/stat) handle")
+			require.NotNil(t, closer, "ProcThreadSelf(/stat) closer")
+			defer closer()
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/proc/%d/task/%d/stat", os.Getpid(), unix.Gettid())
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("wacky-abspath", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("////./////stat")
+			require.NoError(t, err, "ProcThreadSelf(////./////stat)")
+			require.NotNil(t, handle, "ProcThreadSelf(////./////stat) handle")
+			require.NotNil(t, closer, "ProcThreadSelf(////./////stat) closer")
+			defer closer()
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/proc/%d/task/%d/stat", os.Getpid(), unix.Gettid())
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("dotdot", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("../../../../../../../../..")
+			require.Error(t, err, "ProcThreadSelf(../...)")
+			require.Nil(t, handle, "ProcThreadSelf(../...) handle")
+			require.Nil(t, closer, "ProcThreadSelf(../...) closer")
+		})
+
+		t.Run("wacky-dotdot", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("/../../../../../../../../..")
+			require.Error(t, err, "ProcThreadSelf(/../...)")
+			require.Nil(t, handle, "ProcThreadSelf(/../...) handle")
+			require.Nil(t, closer, "ProcThreadSelf(/../...) closer")
+		})
 	})
 }
 

@@ -252,16 +252,146 @@ func TestProcOvermountSubdir_ProcThreadSelf(t *testing.T) {
 	})
 }
 
+// isFsopenRoot returns whether the internal procfs handle is an fsopen root.
+func isFsopenRoot(t *testing.T) bool {
+	procRoot, err := getProcRoot()
+	require.NoError(t, err)
+	return procRoot.Name() == "fsmount:fscontext:proc"
+}
+
 // Because of the introduction of protections against /proc overmounts,
 // ProcThreadSelf will not be called in actual tests unless we have a basic
 // test here.
 func TestProcThreadSelf(t *testing.T) {
 	withWithoutOpenat2(t, true, func(t *testing.T) {
-		handle, closer, err := ProcThreadSelf("stat")
-		require.NoError(t, err, "ProcThreadSelf(stat)")
-		require.NotNil(t, handle, "ProcThreadSelf(stat)")
-		defer closer()
-		defer handle.Close() //nolint:errcheck // test code
+		t.Run("stat", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("stat")
+			require.NoError(t, err, "ProcThreadSelf(stat)")
+			require.NotNil(t, handle, "ProcThreadSelf(stat) handle")
+			require.NotNil(t, closer, "ProcThreadSelf(stat) closer")
+			defer closer()
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/%d/task/%d/stat", os.Getpid(), unix.Gettid())
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("abspath", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("/stat")
+			require.NoError(t, err, "ProcThreadSelf(/stat)")
+			require.NotNil(t, handle, "ProcThreadSelf(/stat) handle")
+			require.NotNil(t, closer, "ProcThreadSelf(/stat) closer")
+			defer closer()
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/%d/task/%d/stat", os.Getpid(), unix.Gettid())
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("wacky-abspath", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("////./////stat")
+			require.NoError(t, err, "ProcThreadSelf(////./////stat)")
+			require.NotNil(t, handle, "ProcThreadSelf(////./////stat) handle")
+			require.NotNil(t, closer, "ProcThreadSelf(////./////stat) closer")
+			defer closer()
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/%d/task/%d/stat", os.Getpid(), unix.Gettid())
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("dotdot", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("../../../../../../../../..")
+			require.Error(t, err, "ProcThreadSelf(../...)")
+			require.Nil(t, handle, "ProcThreadSelf(../...) handle")
+			require.Nil(t, closer, "ProcThreadSelf(../...) closer")
+		})
+
+		t.Run("wacky-dotdot", func(t *testing.T) {
+			handle, closer, err := ProcThreadSelf("/../../../../../../../../..")
+			require.Error(t, err, "ProcThreadSelf(/../...)")
+			require.Nil(t, handle, "ProcThreadSelf(/../...) handle")
+			require.Nil(t, closer, "ProcThreadSelf(/../...) closer")
+		})
+	})
+}
+
+func TestProcPid(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		t.Run("pid1-stat", func(t *testing.T) {
+			handle, err := ProcPid(1, "stat")
+			require.NoError(t, err, "ProcPid(1, stat)")
+			require.NotNil(t, handle, "ProcPid(1, stat) handle")
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := "/1/stat"
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("pid1-stat-abspath", func(t *testing.T) {
+			handle, err := ProcPid(1, "/stat")
+			require.NoError(t, err, "ProcPid(1, /stat)")
+			require.NotNil(t, handle, "ProcPid(1, /stat) handle")
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := "/1/stat"
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("pid1-stat-wacky-abspath", func(t *testing.T) {
+			handle, err := ProcPid(1, "////.////stat")
+			require.NoError(t, err, "ProcPid(1, ////.////stat)")
+			require.NotNil(t, handle, "ProcPid(1, ////.////stat) handle")
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := "/1/stat"
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("dotdot", func(t *testing.T) {
+			handle, err := ProcPid(1, "../../../../../../../../..")
+			require.Error(t, err, "ProcPid(1, ../...)")
+			require.Nil(t, handle, "ProcPid(1, ../...) handle")
+		})
+
+		t.Run("wacky-dotdot", func(t *testing.T) {
+			handle, err := ProcPid(1, "/../../../../../../../../..")
+			require.Error(t, err, "ProcPid(1, /../...)")
+			require.Nil(t, handle, "ProcPid(1, /../...) handle")
+		})
 	})
 }
 

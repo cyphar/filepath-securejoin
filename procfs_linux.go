@@ -216,12 +216,6 @@ var errUnsafeProcfs = errors.New("unsafe procfs detected")
 // [os.File]: https://pkg.go.dev/os#File
 type ProcThreadSelfCloser func()
 
-// NOTE: THIS IS NOT YET SAFE TO EXPORT. The non-openat2(2) case is just using
-// a plain openat(2), which is not entirely safe against overmount attacks.
-// Yes, if we are using fsopen(2) or open_tree(2) (without AT_RECURSIVE), then
-// this is safe, but we shouldn't make less privileged users (or users on older
-// kernels) incorrectly assume this is safe. libpathrs does it correctly, and
-// it's best to leave it to them.
 func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThreadSelfCloser, Err error) {
 	// If called from the external API, procRoot will be nil, so just get the
 	// global root handle. It's also possible one of our tests calls this with
@@ -283,6 +277,34 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThread
 // applied and using *os.File.
 func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
 	return procThreadSelf(nil, subpath)
+}
+
+// ProcPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
+// You should not use this for the current thread, as special handling is
+// needed for /proc/thread-self (or /proc/self/task/<tid>) when dealing with
+// goroutine scheduling -- use [ProcThreadSelf] instead. This is mainly
+// intended for usage when operating on other processes.
+//
+// You should not try to operate on the top-level /proc handle (such as by
+// setting subpath to "../foo"). This will not work at all on non-openat2
+// systems, and when using an internal fsopen-based handle, the mount will have
+// subset=pids and hidepid=traceable set (which will restrict what PIDs can be
+// accessed with this API, as well as removing any non-PID procfs files).
+func ProcPid(pid int, subpath string) (*os.File, error) {
+	procRoot, err := getProcRoot()
+	if err != nil {
+		return nil, err
+	}
+
+	handle, err := procfsLookupInRoot(procRoot, strconv.Itoa(pid)+"/"+subpath)
+	if err != nil {
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return nil, wrapBaseError(err, errUnsafeProcfs)
+	}
+	return handle, nil
 }
 
 // STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to

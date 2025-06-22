@@ -216,12 +216,6 @@ var errUnsafeProcfs = errors.New("unsafe procfs detected")
 // [os.File]: https://pkg.go.dev/os#File
 type ProcThreadSelfCloser func()
 
-// NOTE: THIS IS NOT YET SAFE TO EXPORT. The non-openat2(2) case is just using
-// a plain openat(2), which is not entirely safe against overmount attacks.
-// Yes, if we are using fsopen(2) or open_tree(2) (without AT_RECURSIVE), then
-// this is safe, but we shouldn't make less privileged users (or users on older
-// kernels) incorrectly assume this is safe. libpathrs does it correctly, and
-// it's best to leave it to them.
 func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThreadSelfCloser, Err error) {
 	// If called from the external API, procRoot will be nil, so just get the
 	// global root handle. It's also possible one of our tests calls this with

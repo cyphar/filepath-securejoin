@@ -307,20 +307,23 @@ func ProcPid(pid int, subpath string) (*os.File, error) {
 	return handle, nil
 }
 
-// STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
-// avoid bumping the requirement for a single constant we can just define it
-// ourselves.
-const STATX_MNT_ID_UNIQUE = 0x4000 //nolint:revive // unix.* name
+const (
+	// STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
+	// avoid bumping the requirement for a single constant we can just define it
+	// ourselves.
+	STATX_MNT_ID_UNIQUE = 0x4000 //nolint:revive // unix.* name
+
+	// We don't care which mount ID we get. The kernel will give us the unique
+	// one if it is supported. If the kernel doesn't support
+	// STATX_MNT_ID_UNIQUE, the bit is ignored and the returned request mask
+	// will only contain STATX_MNT_ID (if supported).
+	wantStatxMntMask = STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
+)
 
 var hasStatxMountID = sync_OnceValue(func() bool {
-	var (
-		stx unix.Statx_t
-		// We don't care which mount ID we get. The kernel will give us the
-		// unique one if it is supported.
-		wantStxMask uint32 = STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
-	)
-	err := unix.Statx(-int(unix.EBADF), "/", 0, int(wantStxMask), &stx)
-	return err == nil && stx.Mask&wantStxMask != 0
+	var stx unix.Statx_t
+	err := unix.Statx(-int(unix.EBADF), "/", 0, wantStatxMntMask, &stx)
+	return err == nil && stx.Mask&wantStatxMntMask != 0
 })
 
 func getMountID(dir *os.File, path string) (uint64, error) {
@@ -329,16 +332,11 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 		return 0, nil
 	}
 
-	var (
-		stx unix.Statx_t
-		// We don't care which mount ID we get. The kernel will give us the
-		// unique one if it is supported.
-		wantStxMask uint32 = STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
-	)
-
 	dirFd, fullPath := prepareAt(dir, path)
-	err := unix.Statx(dirFd, path, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW, int(wantStxMask), &stx)
-	if stx.Mask&wantStxMask == 0 {
+
+	var stx unix.Statx_t
+	err := unix.Statx(dirFd, path, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW, wantStatxMntMask, &stx)
+	if stx.Mask&wantStatxMntMask == 0 {
 		// It's not a kernel limitation, for some reason we couldn't get a
 		// mount ID. Assume it's some kind of attack.
 		//

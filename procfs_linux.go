@@ -122,7 +122,7 @@ func newPrivateProcMount() (*os.File, error) {
 	if err := unix.FsconfigCreate(int(procfsCtx.Fd())); err != nil {
 		return nil, os.NewSyscallError("fsconfig create procfs", err)
 	}
-	return fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_RDONLY|unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
+	return fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
 }
 
 func openTree(dir *os.File, path string, flags uint) (*os.File, error) {

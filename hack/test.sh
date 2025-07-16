@@ -1,4 +1,6 @@
 #!/bin/bash
+# SPDX-License-Identifier: MPL-2.0
+
 # Copyright (C) 2024-2025 Aleksa Sarai <cyphar@cyphar.com>
 # Copyright (C) 2024-2025 SUSE LLC
 #

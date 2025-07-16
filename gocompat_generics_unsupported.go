@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BSD-3-Clause
+
 //go:build linux && !go1.21
 
 // Copyright (C) 2024 SUSE LLC. All rights reserved.

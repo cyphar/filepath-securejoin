@@ -92,7 +92,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   implement this in `filepath-securejoin` ([libpathrs][] supports all of this,
   of course).
 
-[libpathrs]: https://github.com/openSUSE/libpathrs
+### Changed ###
+- The procfs root file descriptor is no longer cached for the lifetime of the
+  process. This kind of global file descriptor caching has caused security
+  issues in container runtimes before (see [CVE-2024-21626][] for an example),
+  and so it seems prudent to avoid it. This mirrors [a similar change made to
+  libpathrs][libpathrs-pr204].
+
+[libpathrs]: https://github.com/cyphar/libpathrs
+[libpathrs-pr204]: https://github.com/cyphar/libpathrs/pull/204
 [statx.2]: https://www.man7.org/linux/man-pages/man2/statx.2.html
 
 ## [0.4.1] - 2025-01-28 ##
@@ -262,7 +270,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   safe to start migrating to as we have extensive tests ensuring they behave
   correctly and are safe against various races and other attacks.
 
-[libpathrs]: https://github.com/openSUSE/libpathrs
+[libpathrs]: https://github.com/cyphar/libpathrs
 [open.2]: https://www.man7.org/linux/man-pages/man2/open.2.html
 
 ## [0.2.5] - 2024-05-03 ##

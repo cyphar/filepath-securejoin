@@ -67,6 +67,7 @@ func Reopen(handle *os.File, flags int) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
 
 	// We can't operate on /proc/thread-self/fd/$n directly when doing a
 	// re-open, so we need to open /proc/thread-self/fd and then open a single

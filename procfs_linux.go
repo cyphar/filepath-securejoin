@@ -189,7 +189,7 @@ func unsafeHostProcRoot() (_ *os.File, Err error) {
 	return procRoot, nil
 }
 
-func doGetProcRoot() (*os.File, error) {
+func getProcRoot() (*os.File, error) {
 	procRoot, err := privateProcRoot()
 	if err != nil {
 		// Fall back to using a /proc handle if making a private mount failed.
@@ -199,10 +199,6 @@ func doGetProcRoot() (*os.File, error) {
 	}
 	return procRoot, err
 }
-
-var getProcRoot = sync_OnceValues(func() (*os.File, error) {
-	return doGetProcRoot()
-})
 
 var hasProcThreadSelf = sync_OnceValue(func() bool {
 	return unix.Access("/proc/thread-self/", unix.F_OK) == nil
@@ -226,6 +222,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThread
 			return nil, nil, err
 		}
 		procRoot = root
+		defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
 	}
 
 	// We need to lock our thread until the caller is done with the handle
@@ -295,6 +292,7 @@ func ProcPid(pid int, subpath string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
 
 	handle, err := procfsLookupInRoot(procRoot, strconv.Itoa(pid)+"/"+subpath)
 	if err != nil {
@@ -407,6 +405,7 @@ func rawProcSelfFdReadlink(fd int) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
 	return doRawProcSelfFdReadlink(procRoot, fd)
 }
 

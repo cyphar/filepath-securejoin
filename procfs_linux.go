@@ -206,6 +206,32 @@ var hasProcThreadSelf = sync_OnceValue(func() bool {
 
 var errUnsafeProcfs = errors.New("unsafe procfs detected")
 
+// procOpen is a very minimal wrapper around [procfsLookupInRoot] which is
+// intended to be called from the external API.
+func procOpen(procRoot *os.File, subpath string) (*os.File, error) {
+	// If called from the external API, procRoot will be nil, so just get the
+	// global root handle. It's also possible one of our tests calls this with
+	// nil by accident, so we should handle the case anyway.
+	if procRoot == nil {
+		root, err := getProcRoot()
+		if err != nil {
+			return nil, err
+		}
+		procRoot = root
+		defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
+	}
+
+	handle, err := procfsLookupInRoot(procRoot, subpath)
+	if err != nil {
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return nil, wrapBaseError(err, errUnsafeProcfs)
+	}
+	return handle, nil
+}
+
 // ProcThreadSelfCloser is a callback that needs to be called when you are done
 // operating on an [os.File] fetched using [ProcThreadSelf].
 //
@@ -253,13 +279,9 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThread
 		}
 	}
 
-	handle, err := procfsLookupInRoot(procRoot, threadSelf+subpath)
+	handle, err := procOpen(procRoot, threadSelf+subpath)
 	if err != nil {
-		// TODO: Once we bump the minimum Go version to 1.20, we can use
-		// multiple %w verbs for this wrapping. For now we need to use a
-		// compatibility shim for older Go versions.
-		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-		return nil, nil, wrapBaseError(err, errUnsafeProcfs)
+		return nil, nil, err
 	}
 	return handle, runtime.UnlockOSThread, nil
 }
@@ -288,21 +310,7 @@ func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
 // subset=pids and hidepid=traceable set (which will restrict what PIDs can be
 // accessed with this API, as well as removing any non-PID procfs files).
 func ProcPid(pid int, subpath string) (*os.File, error) {
-	procRoot, err := getProcRoot()
-	if err != nil {
-		return nil, err
-	}
-	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
-
-	handle, err := procfsLookupInRoot(procRoot, strconv.Itoa(pid)+"/"+subpath)
-	if err != nil {
-		// TODO: Once we bump the minimum Go version to 1.20, we can use
-		// multiple %w verbs for this wrapping. For now we need to use a
-		// compatibility shim for older Go versions.
-		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-		return nil, wrapBaseError(err, errUnsafeProcfs)
-	}
-	return handle, nil
+	return procOpen(nil, strconv.Itoa(pid)+"/"+subpath)
 }
 
 const (

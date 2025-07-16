@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //go:build linux
 
 // Copyright (C) 2024-2025 Aleksa Sarai <cyphar@cyphar.com>

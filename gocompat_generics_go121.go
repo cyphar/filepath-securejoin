@@ -26,7 +26,3 @@ func slices_Clone[S ~[]E, E any](slice S) S { //nolint:revive // name is meant t
 func sync_OnceValue[T any](f func() T) func() T { //nolint:revive // name is meant to mirror stdlib
 	return sync.OnceValue(f)
 }
-
-func sync_OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) { //nolint:revive // name is meant to mirror stdlib
-	return sync.OnceValues(f)
-}

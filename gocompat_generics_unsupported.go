@@ -93,32 +93,3 @@ func sync_OnceValue[T any](f func() T) func() T { //nolint:revive // name is mea
 		return result
 	}
 }
-
-// Copied from the Go 1.24 stdlib implementation.
-func sync_OnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) { //nolint:revive // name is meant to mirror stdlib
-	var (
-		once  sync.Once
-		valid bool
-		p     any
-		r1    T1
-		r2    T2
-	)
-	g := func() {
-		defer func() {
-			p = recover()
-			if !valid {
-				panic(p)
-			}
-		}()
-		r1, r2 = f()
-		f = nil
-		valid = true
-	}
-	return func() (T1, T2) {
-		once.Do(g)
-		if !valid {
-			panic(p)
-		}
-		return r1, r2
-	}
-}

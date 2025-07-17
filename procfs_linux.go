@@ -107,16 +107,19 @@ func fsmount(ctx *os.File, flags, mountAttrs int) (*os.File, error) {
 	return os.NewFile(uintptr(fd), "fsmount:"+ctx.Name()), nil
 }
 
-func newPrivateProcMount() (*os.File, error) {
+func newPrivateProcMount(subset bool) (*os.File, error) {
 	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
 	if err != nil {
 		return nil, err
 	}
 	defer procfsCtx.Close() //nolint:errcheck // close failures aren't critical here
 
-	// Try to configure hidepid=ptraceable,subset=pid if possible, but ignore errors.
-	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
-	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "subset", "pid")
+	if subset {
+		// Try to configure hidepid=ptraceable,subset=pid if possible, but
+		// ignore errors.
+		_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
+		_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "subset", "pid")
+	}
 
 	// Get an actual handle.
 	if err := unix.FsconfigCreate(int(procfsCtx.Fd())); err != nil {
@@ -159,13 +162,13 @@ func clonePrivateProcMount() (_ *os.File, Err error) {
 	return procfsHandle, nil
 }
 
-func privateProcRoot() (*os.File, error) {
+func privateProcRoot(subset bool) (*os.File, error) {
 	if !hasNewMountAPI() || hookForceGetProcRootUnsafe() {
 		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
 	}
 	// Try to create a new procfs mount from scratch if we can. This ensures we
 	// can get a procfs mount even if /proc is fake (for whatever reason).
-	procRoot, err := newPrivateProcMount()
+	procRoot, err := newPrivateProcMount(subset)
 	if err != nil || hookForcePrivateProcRootOpenTree(procRoot) {
 		// Try to clone /proc then...
 		procRoot, err = clonePrivateProcMount()
@@ -189,8 +192,11 @@ func unsafeHostProcRoot() (_ *os.File, Err error) {
 	return procRoot, nil
 }
 
-func getProcRoot() (*os.File, error) {
-	procRoot, err := privateProcRoot()
+func getProcRootSubset() (*os.File, error)   { return getProcRoot(true) }
+func getProcRootUnmasked() (*os.File, error) { return getProcRoot(false) }
+
+func getProcRoot(subset bool) (*os.File, error) {
+	procRoot, err := privateProcRoot(subset)
 	if err != nil {
 		// Fall back to using a /proc handle if making a private mount failed.
 		// If we have openat2, at least we can avoid some kinds of over-mount
@@ -213,7 +219,7 @@ func procOpen(procRoot *os.File, subpath string) (*os.File, error) {
 	// global root handle. It's also possible one of our tests calls this with
 	// nil by accident, so we should handle the case anyway.
 	if procRoot == nil {
-		root, err := getProcRoot()
+		root, err := getProcRootSubset() // default to subset=pids
 		if err != nil {
 			return nil, err
 		}
@@ -243,7 +249,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThread
 	// global root handle. It's also possible one of our tests calls this with
 	// nil by accident, so we should handle the case anyway.
 	if procRoot == nil {
-		root, err := getProcRoot()
+		root, err := getProcRootSubset() // subset=pids
 		if err != nil {
 			return nil, nil, err
 		}
@@ -409,7 +415,7 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 }
 
 func rawProcSelfFdReadlink(fd int) (string, error) {
-	procRoot, err := getProcRoot()
+	procRoot, err := getProcRootSubset() // subset=pids
 	if err != nil {
 		return "", err
 	}

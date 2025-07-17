@@ -63,7 +63,7 @@ func OpenInRoot(root, unsafePath string) (*os.File, error) {
 //
 // [CVE-2019-19921]: https://github.com/advisories/GHSA-fh74-hm69-rqjw
 func Reopen(handle *os.File, flags int) (*os.File, error) {
-	procRoot, err := getProcRoot()
+	procRoot, err := getProcRootSubset() // subset=pids
 	if err != nil {
 		return nil, err
 	}

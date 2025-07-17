@@ -28,7 +28,7 @@ func dupFile(f *os.File) (*os.File, error) {
 // *informational* string that describes a reasonable pathname for the given
 // *at(2) arguments. You must not use the full path for any actual filesystem
 // operations.
-func prepareAt(dir *os.File, path string) (dirFd int, unsafeFullPath string) {
+func prepareAt(dir *os.File, path string) (dirFd int, unsafeUnmaskedPath string) {
 	dirFd, dirPath := -int(unix.EBADF), "."
 	if dir != nil {
 		dirFd, dirPath = int(dir.Fd()), dir.Name()

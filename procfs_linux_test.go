@@ -19,6 +19,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func newPrivateProcMountSubset() (*os.File, error)   { return newPrivateProcMount(true) }
+func newPrivateProcMountUnmasked() (*os.File, error) { return newPrivateProcMount(false) }
+
 func doMount(t *testing.T, source, target, fsType string, flags uintptr) {
 	var sourcePath string
 	if source != "" {
@@ -201,13 +204,23 @@ func TestProcOvermountSubdir_unsafeHostProcRoot(t *testing.T) {
 	})
 }
 
-func TestProcOvermountSubdir_newPrivateProcMount(t *testing.T) {
+func TestProcOvermountSubdir_newPrivateProcMountSubset(t *testing.T) {
 	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// If we create our own procfs, the overmounts shouldn't appear.
-		testProcOvermountSubdir(t, newPrivateProcMount, false)
+		testProcOvermountSubdir(t, newPrivateProcMountSubset, false)
+	})
+}
+
+func TestProcOvermountSubdir_newPrivateProcMountUnmasked(t *testing.T) {
+	if !hasNewMountAPI() {
+		t.Skip("test requires fsopen/open_tree support")
+	}
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		// If we create our own procfs, the overmounts shouldn't appear.
+		testProcOvermountSubdir(t, newPrivateProcMountUnmasked, false)
 	})
 }
 
@@ -223,22 +236,31 @@ func TestProcOvermountSubdir_clonePrivateProcMount(t *testing.T) {
 	})
 }
 
-func TestProcOvermountSubdir_getProcRoot(t *testing.T) {
+func TestProcOvermountSubdir_getProcRootSubset(t *testing.T) {
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
-		testProcOvermountSubdir(t, getProcRoot, !hasNewMountAPI())
+		testProcOvermountSubdir(t, getProcRootSubset, !hasNewMountAPI())
 	})
 }
 
-func TestProcOvermountSubdir_getProcRoot_Mocked(t *testing.T) {
+func TestProcOvermountSubdir_getProcRootUnmasked(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		// We expect to not get overmounts if we have the new mount API.
+		// FIXME: It's possible to hit overmounts if there are locked mounts
+		// and we hit the AT_RECURSIVE case...
+		testProcOvermountSubdir(t, getProcRootUnmasked, !hasNewMountAPI())
+	})
+}
+
+func TestProcOvermountSubdir_getProcRootSubset_Mocked(t *testing.T) {
 	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
-			testProcOvermountSubdir(t, getProcRoot, expectOvermounts)
+			testProcOvermountSubdir(t, getProcRootSubset, expectOvermounts)
 		})
 	})
 }
@@ -255,7 +277,7 @@ func TestProcOvermountSubdir_ProcThreadSelf(t *testing.T) {
 
 // isFsopenRoot returns whether the internal procfs handle is an fsopen root.
 func isFsopenRoot(t *testing.T) bool {
-	procRoot, err := getProcRoot()
+	procRoot, err := getProcRootUnmasked()
 	require.NoError(t, err)
 	return procRoot.Name() == "fsmount:fscontext:proc"
 }
@@ -396,6 +418,25 @@ func TestProcPid(t *testing.T) {
 	})
 }
 
+func TestProcRoot(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		t.Run("sysctl", func(t *testing.T) {
+			handle, err := ProcRoot("sys/kernel/version")
+			require.NoError(t, err, "ProcRoot(sys/kernel/version)")
+			require.NotNil(t, handle, "ProcPid(sys/kernel/version) handle")
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := "/sys/kernel/version"
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+	})
+}
+
 func canFsOpen() bool {
 	f, err := fsopen("tmpfs", 0)
 	if f != nil {
@@ -448,25 +489,32 @@ func TestProcOvermount_clonePrivateProcMount(t *testing.T) {
 	testProcOvermount(t, clonePrivateProcMount, false)
 }
 
-func TestProcOvermount_newPrivateProcMount(t *testing.T) {
+func TestProcOvermount_newPrivateProcMountSubset(t *testing.T) {
 	if !hasNewMountAPI() || !canFsOpen() {
 		t.Skip("test requires fsopen support")
 	}
-	testProcOvermount(t, newPrivateProcMount, true)
+	testProcOvermount(t, newPrivateProcMountSubset, true)
 }
 
-func TestProcOvermount_getProcRoot(t *testing.T) {
+func TestProcOvermount_newPrivateProcMountUnmasked(t *testing.T) {
+	if !hasNewMountAPI() || !canFsOpen() {
+		t.Skip("test requires fsopen support")
+	}
+	testProcOvermount(t, newPrivateProcMountUnmasked, true)
+}
+
+func TestProcOvermount_getProcRootSubset(t *testing.T) {
 	privateProcMount := canFsOpen() && !testingForcePrivateProcRootOpenTree(nil)
-	testProcOvermount(t, getProcRoot, privateProcMount)
+	testProcOvermount(t, getProcRootSubset, privateProcMount)
 }
 
-func TestProcOvermount_getProcRoot_Mocked(t *testing.T) {
+func TestProcOvermount_getProcRootSubset_Mocked(t *testing.T) {
 	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
 	testForceGetProcRoot(t, func(t *testing.T, _ bool) {
 		privateProcMount := canFsOpen() && !testingForcePrivateProcRootOpenTree(nil)
-		testProcOvermount(t, getProcRoot, privateProcMount)
+		testProcOvermount(t, getProcRootSubset, privateProcMount)
 	})
 }
 

@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
      Also note that if the target process dies, the handle you received from
      `ProcPid` may start returning errors or blank data when you operate on it.
 
+   * `ProcRoot` lets you get access to top-level `/proc` paths, which is
+     primarily useful for things like sysctls.
+
+     As this requires access to non-`subset=pids` paths, the internal
+     `fsopen("procfs")` handle is not restricted and so you should use this
+     method with care. Leaking this file descriptor (even in subtle ways) can
+     easily lead to very concerning [CVE-2024-21626][]-style bugs where a
+     privileged user could break out of containers.
+
    * `ProcSelfFdReadlink` lets you get the in-kernel path representation of a
      file descriptor (think `readlink("/proc/self/fd/...")`). This is
      equivalent to doing a `readlinkat(fd, "", ...)` of
@@ -99,6 +108,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   and so it seems prudent to avoid it. This mirrors [a similar change made to
   libpathrs][libpathrs-pr204].
 
+[CVE-2024-21626]: https://github.com/opencontainers/runc/security/advisories/GHSA-xr7r-f8xq-vfvv
 [libpathrs]: https://github.com/cyphar/libpathrs
 [libpathrs-pr204]: https://github.com/cyphar/libpathrs/pull/204
 [statx.2]: https://www.man7.org/linux/man-pages/man2/statx.2.html

@@ -107,16 +107,19 @@ func fsmount(ctx *os.File, flags, mountAttrs int) (*os.File, error) {
 	return os.NewFile(uintptr(fd), "fsmount:"+ctx.Name()), nil
 }
 
-func newPrivateProcMount() (*os.File, error) {
+func newPrivateProcMount(subset bool) (*os.File, error) {
 	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
 	if err != nil {
 		return nil, err
 	}
 	defer procfsCtx.Close() //nolint:errcheck // close failures aren't critical here
 
-	// Try to configure hidepid=ptraceable,subset=pid if possible, but ignore errors.
-	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
-	_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "subset", "pid")
+	if subset {
+		// Try to configure hidepid=ptraceable,subset=pid if possible, but
+		// ignore errors.
+		_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
+		_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "subset", "pid")
+	}
 
 	// Get an actual handle.
 	if err := unix.FsconfigCreate(int(procfsCtx.Fd())); err != nil {
@@ -159,13 +162,13 @@ func clonePrivateProcMount() (_ *os.File, Err error) {
 	return procfsHandle, nil
 }
 
-func privateProcRoot() (*os.File, error) {
+func privateProcRoot(subset bool) (*os.File, error) {
 	if !hasNewMountAPI() || hookForceGetProcRootUnsafe() {
 		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
 	}
 	// Try to create a new procfs mount from scratch if we can. This ensures we
 	// can get a procfs mount even if /proc is fake (for whatever reason).
-	procRoot, err := newPrivateProcMount()
+	procRoot, err := newPrivateProcMount(subset)
 	if err != nil || hookForcePrivateProcRootOpenTree(procRoot) {
 		// Try to clone /proc then...
 		procRoot, err = clonePrivateProcMount()
@@ -189,8 +192,11 @@ func unsafeHostProcRoot() (_ *os.File, Err error) {
 	return procRoot, nil
 }
 
-func getProcRoot() (*os.File, error) {
-	procRoot, err := privateProcRoot()
+func getProcRootSubset() (*os.File, error)   { return getProcRoot(true) }
+func getProcRootUnmasked() (*os.File, error) { return getProcRoot(false) }
+
+func getProcRoot(subset bool) (*os.File, error) {
+	procRoot, err := privateProcRoot(subset)
 	if err != nil {
 		// Fall back to using a /proc handle if making a private mount failed.
 		// If we have openat2, at least we can avoid some kinds of over-mount
@@ -206,6 +212,32 @@ var hasProcThreadSelf = sync_OnceValue(func() bool {
 
 var errUnsafeProcfs = errors.New("unsafe procfs detected")
 
+// procOpen is a very minimal wrapper around [procfsLookupInRoot] which is
+// intended to be called from the external API.
+func procOpen(procRoot *os.File, subpath string) (*os.File, error) {
+	// If called from the external API, procRoot will be nil, so just get the
+	// global root handle. It's also possible one of our tests calls this with
+	// nil by accident, so we should handle the case anyway.
+	if procRoot == nil {
+		root, err := getProcRootSubset() // default to subset=pids
+		if err != nil {
+			return nil, err
+		}
+		procRoot = root
+		defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
+	}
+
+	handle, err := procfsLookupInRoot(procRoot, subpath)
+	if err != nil {
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return nil, wrapBaseError(err, errUnsafeProcfs)
+	}
+	return handle, nil
+}
+
 // ProcThreadSelfCloser is a callback that needs to be called when you are done
 // operating on an [os.File] fetched using [ProcThreadSelf].
 //
@@ -217,7 +249,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThread
 	// global root handle. It's also possible one of our tests calls this with
 	// nil by accident, so we should handle the case anyway.
 	if procRoot == nil {
-		root, err := getProcRoot()
+		root, err := getProcRootSubset() // subset=pids
 		if err != nil {
 			return nil, nil, err
 		}
@@ -253,13 +285,9 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThread
 		}
 	}
 
-	handle, err := procfsLookupInRoot(procRoot, threadSelf+subpath)
+	handle, err := procOpen(procRoot, threadSelf+subpath)
 	if err != nil {
-		// TODO: Once we bump the minimum Go version to 1.20, we can use
-		// multiple %w verbs for this wrapping. For now we need to use a
-		// compatibility shim for older Go versions.
-		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-		return nil, nil, wrapBaseError(err, errUnsafeProcfs)
+		return nil, nil, err
 	}
 	return handle, runtime.UnlockOSThread, nil
 }
@@ -279,43 +307,41 @@ func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
 // ProcPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
 // You should not use this for the current thread, as special handling is
 // needed for /proc/thread-self (or /proc/self/task/<tid>) when dealing with
-// goroutine scheduling -- use [ProcThreadSelf] instead. This is mainly
-// intended for usage when operating on other processes.
+// goroutine scheduling -- use [ProcThreadSelf] instead.
 //
-// You should not try to operate on the top-level /proc handle (such as by
-// setting subpath to "../foo"). This will not work at all on non-openat2
-// systems, and when using an internal fsopen-based handle, the mount will have
-// subset=pids and hidepid=traceable set (which will restrict what PIDs can be
-// accessed with this API, as well as removing any non-PID procfs files).
+// This is mainly intended for usage when operating on other processes. If you
+// want to operate on the top-level /proc filesystem, you should use [ProcRoot]
+// instead.
 func ProcPid(pid int, subpath string) (*os.File, error) {
-	procRoot, err := getProcRoot()
+	return procOpen(nil, strconv.Itoa(pid)+"/"+subpath)
+}
+
+// ProcRoot returns a handle to /proc/<subpath>.
+//
+// You should only use this when you need to operate on global procfs files
+// (such as sysctls in /proc/sys). Unlike [ProcThreadSelf] and [ProcPid], the
+// procfs handle used internally for this operation will never use subset=pids,
+// which makes it a more juicy target for CVE-2024-21626-style attacks.
+func ProcRoot(subpath string) (*os.File, error) {
+	procRoot, err := getProcRootUnmasked() // !subset=pids
 	if err != nil {
 		return nil, err
 	}
 	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
-
-	handle, err := procfsLookupInRoot(procRoot, strconv.Itoa(pid)+"/"+subpath)
-	if err != nil {
-		// TODO: Once we bump the minimum Go version to 1.20, we can use
-		// multiple %w verbs for this wrapping. For now we need to use a
-		// compatibility shim for older Go versions.
-		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-		return nil, wrapBaseError(err, errUnsafeProcfs)
-	}
-	return handle, nil
+	return procOpen(procRoot, subpath)
 }
 
 const (
 	// STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
 	// avoid bumping the requirement for a single constant we can just define it
 	// ourselves.
-	STATX_MNT_ID_UNIQUE = 0x4000 //nolint:revive // unix.* name
+	_STATX_MNT_ID_UNIQUE = 0x4000 //nolint:revive // unix.* name
 
 	// We don't care which mount ID we get. The kernel will give us the unique
 	// one if it is supported. If the kernel doesn't support
 	// STATX_MNT_ID_UNIQUE, the bit is ignored and the returned request mask
 	// will only contain STATX_MNT_ID (if supported).
-	wantStatxMntMask = STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
+	wantStatxMntMask = _STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
 )
 
 var hasStatxMountID = sync_OnceValue(func() bool {
@@ -401,7 +427,7 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 }
 
 func rawProcSelfFdReadlink(fd int) (string, error) {
-	procRoot, err := getProcRoot()
+	procRoot, err := getProcRootSubset() // subset=pids
 	if err != nil {
 		return "", err
 	}

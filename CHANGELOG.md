@@ -23,17 +23,23 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
      magiclinks) using this API. At the moment `filepath-securejoin` does not
      support this feature (but [libpathrs][] does).
 
+   * `ProcSelf` is the `/proc/self` equivalent of `ProcThreadSelf`. Unlike
+     `ProcThreadSelf`, it is not necessary to lock the goroutine to the current
+     thread (since `/proc/self` refers to the thread-group leader and is not
+     intended for per-thread operations) and so no `ProcThreadSelfCloser`
+     closure will be returned.
+
    * `ProcPid` is very similar to `ProcThreadSelf`, except it lets you get
-     handles to subpaths of other processes. Unlike `ProcThreadSelf`, it is not
-     necessary to lock the goroutine to the current thread and so no
-     `ProcThreadSelfCloser` closure will be returned.
+     handles to subpaths of other processes.
 
      Please note that it is possible for you to be unable to access processes
      in certain configurations (when using `fsopen(2)`, the internal procfs
      mount will have `subset=pids,hidepids=traceable` mount options applied,
      which will hide many other processes and any non-process-related top-level
-     files), but `ProcPid(os.Getpid(), ...)` (to access the current
-     thread-group leader) should always work.
+     files). To operate on the current thread-group, prefer to use `ProcSelf`
+     rather than `ProcPid(os.Getpid(), ...)` because the latter will not
+     necessarily work properly in situations with complicated PID namespace
+     setups.
 
      Also note that if the target process dies, the handle you received from
      `ProcPid` may start returning errors or blank data when you operate on it.

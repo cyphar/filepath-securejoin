@@ -357,6 +357,70 @@ func TestProcThreadSelf(t *testing.T) {
 	})
 }
 
+func TestProcSelf(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		t.Run("stat", func(t *testing.T) {
+			handle, err := ProcSelf("stat")
+			require.NoError(t, err, "ProcSelf(stat)")
+			require.NotNil(t, handle, "ProcSelf(stat) handle")
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/%d/stat", os.Getpid())
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("abspath", func(t *testing.T) {
+			handle, err := ProcSelf("/stat")
+			require.NoError(t, err, "ProcSelf(/stat)")
+			require.NotNil(t, handle, "ProcSelf(/stat) handle")
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/%d/stat", os.Getpid())
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("wacky-abspath", func(t *testing.T) {
+			handle, err := ProcSelf("////./////stat")
+			require.NoError(t, err, "ProcSelf(////./////stat)")
+			require.NotNil(t, handle, "ProcSelf(////./////stat) handle")
+			defer handle.Close() //nolint:errcheck // test code
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := fmt.Sprintf("/%d/stat", os.Getpid())
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+
+		t.Run("dotdot", func(t *testing.T) {
+			handle, err := ProcSelf("../../../../../../../../..")
+			require.Error(t, err, "ProcSelf(../...)")
+			require.Nil(t, handle, "ProcSelf(../...) handle")
+		})
+
+		t.Run("wacky-dotdot", func(t *testing.T) {
+			handle, err := ProcSelf("/../../../../../../../../..")
+			require.Error(t, err, "ProcSelf(/../...)")
+			require.Nil(t, handle, "ProcSelf(/../...) handle")
+		})
+	})
+}
+
 func TestProcPid(t *testing.T) {
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		t.Run("pid1-stat", func(t *testing.T) {

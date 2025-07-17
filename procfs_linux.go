@@ -304,14 +304,29 @@ func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
 	return procThreadSelf(nil, subpath)
 }
 
+// ProcSelf returns a handle to /proc/self/<subpath>.
+//
+// Note that in Go programs with non-homogenous threads, this may result in
+// spurious errors. If you are monkeying around with APIs that are
+// thread-specific, you probably want to use [ProcThreadSelf] instead which
+// will guarantee that the handle refers to the same thread as the caller is
+// executing on.
+func ProcSelf(subpath string) (*os.File, error) {
+	return procOpen(nil, "self/"+subpath)
+}
+
 // ProcPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
+// This is mainly intended for usage when operating on other processes.
+//
 // You should not use this for the current thread, as special handling is
 // needed for /proc/thread-self (or /proc/self/task/<tid>) when dealing with
 // goroutine scheduling -- use [ProcThreadSelf] instead.
 //
-// This is mainly intended for usage when operating on other processes. If you
-// want to operate on the top-level /proc filesystem, you should use [ProcRoot]
-// instead.
+// To refer to the current thread-group, you should use prefer [ProcSelf] to
+// passing os.Getpid as the pid argument.
+//
+// If you want to operate on the top-level /proc filesystem, you should use
+// [ProcRoot] instead.
 func ProcPid(pid int, subpath string) (*os.File, error) {
 	return procOpen(nil, strconv.Itoa(pid)+"/"+subpath)
 }
@@ -319,9 +334,10 @@ func ProcPid(pid int, subpath string) (*os.File, error) {
 // ProcRoot returns a handle to /proc/<subpath>.
 //
 // You should only use this when you need to operate on global procfs files
-// (such as sysctls in /proc/sys). Unlike [ProcThreadSelf] and [ProcPid], the
-// procfs handle used internally for this operation will never use subset=pids,
-// which makes it a more juicy target for CVE-2024-21626-style attacks.
+// (such as sysctls in /proc/sys). Unlike [ProcThreadSelf], [ProcSelf], and
+// [ProcPid], the procfs handle used internally for this operation will never
+// use subset=pids, which makes it a more juicy target for CVE-2024-21626-style
+// attacks.
 func ProcRoot(subpath string) (*os.File, error) {
 	procRoot, err := getProcRootUnmasked() // !subset=pids
 	if err != nil {

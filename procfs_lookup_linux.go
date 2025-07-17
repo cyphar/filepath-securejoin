@@ -1,8 +1,13 @@
+// SPDX-License-Identifier: MPL-2.0
+
 //go:build linux
 
-// Copyright (C) 2024-2025 SUSE LLC. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Copyright (C) 2024-2025 Aleksa Sarai <cyphar@cyphar.com>
+// Copyright (C) 2024-2025 SUSE LLC
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 // This code is adapted to be a minimal version of the libpathrs proc resolver
 // <https://github.com/opensuse/libpathrs/blob/v0.1.3/src/resolvers/procfs.rs>.

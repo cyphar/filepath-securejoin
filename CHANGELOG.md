@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+> **NOTE**: With this release, some parts of
+> `github.com/cyphar/filepath-securejoin` (notably the new APIs introduced
+> since the [0.3.0][] release) are now licensed under the Mozilla Public
+> License (version 2).
+
 ### Added ###
 - Some minimal parts of the safe `procfs` API have now been exposed. At the
   moment these include:

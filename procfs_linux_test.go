@@ -418,6 +418,25 @@ func TestProcPid(t *testing.T) {
 	})
 }
 
+func TestProcRoot(t *testing.T) {
+	withWithoutOpenat2(t, true, func(t *testing.T) {
+		t.Run("sysctl", func(t *testing.T) {
+			handle, err := ProcRoot("sys/kernel/version")
+			require.NoError(t, err, "ProcRoot(sys/kernel/version)")
+			require.NotNil(t, handle, "ProcPid(sys/kernel/version) handle")
+
+			realPath, err := ProcSelfFdReadlink(handle)
+			require.NoError(t, err)
+			wantPath := "/sys/kernel/version"
+			if !isFsopenRoot(t) {
+				// The /proc prefix is only present when not using fsopen.
+				wantPath = "/proc" + wantPath
+			}
+			assert.Equal(t, wantPath, realPath, "final handle path")
+		})
+	})
+}
+
 func canFsOpen() bool {
 	f, err := fsopen("tmpfs", 0)
 	if f != nil {

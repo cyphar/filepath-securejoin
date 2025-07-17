@@ -307,16 +307,28 @@ func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
 // ProcPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
 // You should not use this for the current thread, as special handling is
 // needed for /proc/thread-self (or /proc/self/task/<tid>) when dealing with
-// goroutine scheduling -- use [ProcThreadSelf] instead. This is mainly
-// intended for usage when operating on other processes.
+// goroutine scheduling -- use [ProcThreadSelf] instead.
 //
-// You should not try to operate on the top-level /proc handle (such as by
-// setting subpath to "../foo"). This will not work at all on non-openat2
-// systems, and when using an internal fsopen-based handle, the mount will have
-// subset=pids and hidepid=traceable set (which will restrict what PIDs can be
-// accessed with this API, as well as removing any non-PID procfs files).
+// This is mainly intended for usage when operating on other processes. If you
+// want to operate on the top-level /proc filesystem, you should use [ProcRoot]
+// instead.
 func ProcPid(pid int, subpath string) (*os.File, error) {
 	return procOpen(nil, strconv.Itoa(pid)+"/"+subpath)
+}
+
+// ProcRoot returns a handle to /proc/<subpath>.
+//
+// You should only use this when you need to operate on global procfs files
+// (such as sysctls in /proc/sys). Unlike [ProcThreadSelf] and [ProcPid], the
+// procfs handle used internally for this operation will never use subset=pids,
+// which makes it a more juicy target for CVE-2024-21626-style attacks.
+func ProcRoot(subpath string) (*os.File, error) {
+	procRoot, err := getProcRootUnmasked() // !subset=pids
+	if err != nil {
+		return nil, err
+	}
+	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
+	return procOpen(procRoot, subpath)
 }
 
 const (

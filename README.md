@@ -165,5 +165,18 @@ after `MkdirAll`).
 
 ### License ###
 
-The license of this project is the same as Go, which is a BSD 3-clause license
-available in the `LICENSE` file.
+Some of the code in this project is derived from Go, and is licensed under a
+BSD 3-clause license (available in `LICENSE.BSD`). At time of writing, these
+are:
+
+ * `gocompat_*.go` (backports to provide compatibility with older Go versions)
+ * `join*.go` (port of Docker's symlink expansion, originally based on the
+   stdlib `filepath.EvalSymlinks`)
+
+The rest of the files (many of which are derived from [libpathrs][libpathrs])
+are licensed under the Mozilla Public License version 2.0 (available in
+`LICENSE.MPL-2.0`).
+
+Every source file in this project has a copyright header describing its
+license. Please check the license headers of each file to see what license
+applies to it.

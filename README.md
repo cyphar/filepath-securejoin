@@ -67,7 +67,8 @@ func SecureJoin(root, unsafePath string) (string, error) {
 [libpathrs]: https://github.com/openSUSE/libpathrs
 [go#20126]: https://github.com/golang/go/issues/20126
 
-### New API ###
+### <a name="new-api" /> New API ###
+[#new-api]: #new-api
 
 While we recommend users switch to [libpathrs][libpathrs] as soon as it has a
 stable release, some methods implemented by libpathrs have been ported to this
@@ -169,14 +170,20 @@ Some of the code in this project is derived from Go, and is licensed under a
 BSD 3-clause license (available in `LICENSE.BSD`). At time of writing, these
 are:
 
- * `gocompat_*.go` (backports to provide compatibility with older Go versions)
+ * `doc.go` (module documentation).
+ * `gocompat_*.go` (backports to provide compatibility with older Go versions).
  * `join*.go` (port of Docker's symlink expansion, originally based on the
-   stdlib `filepath.EvalSymlinks`)
+   stdlib `filepath.EvalSymlinks`).
+ * `vfs.go` (minimal filesystem interfaces which was added in order to facility
+   complete rootless support for [umoci][umoci]).
 
 The rest of the files (many of which are derived from [libpathrs][libpathrs])
 are licensed under the Mozilla Public License version 2.0 (available in
-`LICENSE.MPL-2.0`).
+`LICENSE.MPL-2.0`). If you are using the ["New API" described above][#new-api],
+you are probably using code from files released under this license.
 
 Every source file in this project has a copyright header describing its
 license. Please check the license headers of each file to see what license
 applies to it.
+
+[umoci]: https://github.com/opencontainers/umoci

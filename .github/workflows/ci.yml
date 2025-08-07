@@ -192,7 +192,7 @@ jobs:
           go-version: "stable"
           check-latest: true
       - name: download all coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           path: coverage
       - name: generate coverage list

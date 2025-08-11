@@ -112,6 +112,36 @@ func fsmount(ctx *os.File, flags, mountAttrs int) (*os.File, error) {
 	return os.NewFile(uintptr(fd), "fsmount:"+ctx.Name()), nil
 }
 
+type procfsFeatures struct {
+	// hasSubsetPid was added in Linux 5.8, along with hidepid=ptraceable (and
+	// string-based hidepid= values). Before this patchset, it was not really
+	// safe to try to modify procfs superblock flags because the superblock was
+	// shared -- so if this feature is not available, **you should not set any
+	// superblock flags**.
+	//
+	// 6814ef2d992a ("proc: add option to mount only a pids subset")
+	// fa10fed30f25 ("proc: allow to mount many instances of proc in one pid namespace")
+	// 24a71ce5c47f ("proc: instantiate only pids that we can ptrace on 'hidepid=4' mount option")
+	// 1c6c4d112e81 ("proc: use human-readable values for hidepid")
+	// 9ff7258575d5 ("Merge branch 'proc-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/ebiederm/user-namespace")
+	hasSubsetPid bool
+}
+
+var getProcfsFeatures = sync_OnceValue(func() procfsFeatures {
+	if !hasNewMountAPI() {
+		return procfsFeatures{}
+	}
+	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
+	if err != nil {
+		return procfsFeatures{}
+	}
+	defer procfsCtx.Close() //nolint:errcheck // close failures aren't critical here
+
+	return procfsFeatures{
+		hasSubsetPid: unix.FsconfigSetString(int(procfsCtx.Fd()), "subset", "pid") == nil,
+	}
+})
+
 func newPrivateProcMount(subset bool) (*os.File, error) {
 	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
 	if err != nil {
@@ -119,7 +149,7 @@ func newPrivateProcMount(subset bool) (*os.File, error) {
 	}
 	defer procfsCtx.Close() //nolint:errcheck // close failures aren't critical here
 
-	if subset {
+	if subset && getProcfsFeatures().hasSubsetPid {
 		// Try to configure hidepid=ptraceable,subset=pid if possible, but
 		// ignore errors.
 		_ = unix.FsconfigSetString(int(procfsCtx.Fd()), "hidepid", "ptraceable")
@@ -130,6 +160,7 @@ func newPrivateProcMount(subset bool) (*os.File, error) {
 	if err := unix.FsconfigCreate(int(procfsCtx.Fd())); err != nil {
 		return nil, os.NewSyscallError("fsconfig create procfs", err)
 	}
+	// TODO: Output any information from the fscontext log to debug logs.
 	return fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
 }
 

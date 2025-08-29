@@ -5,7 +5,7 @@
 // Copyright (C) 2021, 2022 The Go Authors. All rights reserved.
 // Copyright (C) 2024-2025 SUSE LLC. All rights reserved.
 // Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// license that can be found in the LICENSE.BSD file.
 
 package gocompat
 
@@ -136,4 +136,52 @@ func SyncOnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) {
 		}
 		return d.r1, d.r2
 	}
+}
+
+// CmpOrdered is equivalent to Go 1.21's cmp.Ordered generic type definition.
+// Copied from the Go 1.25 stdlib implementation.
+type CmpOrdered interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 | ~uintptr |
+		~float32 | ~float64 |
+		~string
+}
+
+// isNaN reports whether x is a NaN without requiring the math package.
+// This will always return false if T is not floating-point.
+// Copied from the Go 1.25 stdlib implementation.
+func isNaN[T CmpOrdered](x T) bool {
+	return x != x
+}
+
+// CmpCompare is equivalent to Go 1.21's cmp.Compare.
+// Copied from the Go 1.25 stdlib implementation.
+func CmpCompare[T CmpOrdered](x, y T) int {
+	xNaN := isNaN(x)
+	yNaN := isNaN(y)
+	if xNaN {
+		if yNaN {
+			return 0
+		}
+		return -1
+	}
+	if yNaN {
+		return +1
+	}
+	if x < y {
+		return -1
+	}
+	if x > y {
+		return +1
+	}
+	return 0
+}
+
+// Max2 is equivalent to Go 1.21's max builtin for two parameters.
+func Max2[T CmpOrdered](x, y T) T {
+	m := x
+	if y > m {
+		m = y
+	}
+	return m
 }

@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal/assert"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 	"github.com/cyphar/filepath-securejoin/internal/kernelversion"
 )
@@ -151,7 +152,7 @@ var getProcfsFeatures = gocompat.SyncOnceValue(func() procfsFeatures {
 	}
 })
 
-func newPrivateProcMount(subset bool) (*os.File, error) {
+func newPrivateProcMount(subset bool) (_ *ProcfsHandle, Err error) {
 	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
 	if err != nil {
 		return nil, err
@@ -170,7 +171,16 @@ func newPrivateProcMount(subset bool) (*os.File, error) {
 		return nil, os.NewSyscallError("fsconfig create procfs", err)
 	}
 	// TODO: Output any information from the fscontext log to debug logs.
-	return fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
+	procRoot, err := fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if Err != nil {
+			_ = procRoot.Close()
+		}
+	}()
+	return newProcfsHandle(procRoot)
 }
 
 func openTree(dir *os.File, path string, flags uint) (*os.File, error) {
@@ -185,29 +195,26 @@ func openTree(dir *os.File, path string, flags uint) (*os.File, error) {
 	return os.NewFile(uintptr(fd), fullPath), nil
 }
 
-func clonePrivateProcMount() (_ *os.File, Err error) {
+func clonePrivateProcMount() (_ *ProcfsHandle, Err error) {
 	// Try to make a clone without using AT_RECURSIVE if we can. If this works,
 	// we can be sure there are no over-mounts and so if the root is valid then
 	// we're golden. Otherwise, we have to deal with over-mounts.
-	procfsHandle, err := openTree(nil, "/proc", unix.OPEN_TREE_CLONE)
-	if err != nil || hookForcePrivateProcRootOpenTreeAtRecursive(procfsHandle) {
-		procfsHandle, err = openTree(nil, "/proc", unix.OPEN_TREE_CLONE|unix.AT_RECURSIVE)
+	procRoot, err := openTree(nil, "/proc", unix.OPEN_TREE_CLONE)
+	if err != nil || hookForcePrivateProcRootOpenTreeAtRecursive(procRoot) {
+		procRoot, err = openTree(nil, "/proc", unix.OPEN_TREE_CLONE|unix.AT_RECURSIVE)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("creating a detached procfs clone: %w", err)
 	}
 	defer func() {
 		if Err != nil {
-			_ = procfsHandle.Close()
+			_ = procRoot.Close()
 		}
 	}()
-	if err := verifyProcRoot(procfsHandle); err != nil {
-		return nil, err
-	}
-	return procfsHandle, nil
+	return newProcfsHandle(procRoot)
 }
 
-func privateProcRoot(subset bool) (*os.File, error) {
+func privateProcRoot(subset bool) (*ProcfsHandle, error) {
 	if !hasNewMountAPI() || hookForceGetProcRootUnsafe() {
 		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
 	}
@@ -221,7 +228,7 @@ func privateProcRoot(subset bool) (*os.File, error) {
 	return procRoot, err
 }
 
-func unsafeHostProcRoot() (_ *os.File, Err error) {
+func unsafeHostProcRoot() (_ *ProcfsHandle, Err error) {
 	procRoot, err := os.OpenFile("/proc", unix.O_PATH|unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
@@ -231,24 +238,66 @@ func unsafeHostProcRoot() (_ *os.File, Err error) {
 			_ = procRoot.Close()
 		}
 	}()
-	if err := verifyProcRoot(procRoot); err != nil {
-		return nil, err
-	}
-	return procRoot, nil
+	return newProcfsHandle(procRoot)
 }
 
-func getProcRootSubset() (*os.File, error)   { return getProcRoot(true) }
-func getProcRootUnmasked() (*os.File, error) { return getProcRoot(false) }
+// ProcfsHandle is a wrapper around an *os.File handle to "/proc", which can be
+// used to do further procfs-related operations in a safe way.
+type ProcfsHandle struct {
+	inner *os.File
+	// TODO: When getting a subset=pid handle, cache it and make Close() a
+	//       no-op so that code can work with both setups without leaking
+	//       non-subset=pid handles.
+}
 
-func getProcRoot(subset bool) (*os.File, error) {
-	procRoot, err := privateProcRoot(subset)
+func newProcfsHandle(procRoot *os.File) (*ProcfsHandle, error) {
+	if err := verifyProcRoot(procRoot); err != nil {
+		// This is only used in methods that
+		_ = procRoot.Close()
+		return nil, err
+	}
+	return &ProcfsHandle{inner: procRoot}, nil
+}
+
+// Close closes the underlying file for the ProcfsHandle.
+func (proc *ProcfsHandle) Close() error { return proc.inner.Close() }
+
+// OpenProcRoot tries to open a "safer" handle to "/proc" (i.e., one with the
+// "subset=pid" mount option applied, available from Linux 5.8). Unless you
+// plan to do many operations with [ProcRoot], users should prefer to use this
+// over [OpenUnsafeProcRoot] which is far more dangerous to keep open.
+//
+// If a safe handle cannot be opened, OpenProcRoot will fall back to opening a
+// regular "/proc" handle.
+//
+// Note that using [ProcRoot] will still work with handles returned by this
+// function. If a [ProcRoot] subpath cannot be operated on with a safe "/proc"
+// handle, then [OpenUnsafeProcRoot] will be called internally and a temporary
+// unsafe handle will be used.
+func OpenProcRoot() (*ProcfsHandle, error) { return getProcRoot(true) }
+
+// OpenUnsafeProcRoot opens a handle to "/proc" without any overmounts or
+// masked paths. You must be extremely careful to make sure this handle is
+// never leaked to a container and that you program cannot be tricked into
+// writing to arbitrary paths within it.
+//
+// This is not necessary if you just wish to use [ProcRoot], as handles
+// returned by [OpenProcRoot] will fall back to using a *temporary* unsafe
+// handle in that case. You should only really use this if you need to do many
+// operations on [ProcRoot] and the performance overhead of making many procfs
+// handles is an issue, and you should make sure to close the handle as soon as
+// possible to avoid known-fd-number attacks.
+func OpenUnsafeProcRoot() (*ProcfsHandle, error) { return getProcRoot(false) }
+
+func getProcRoot(subset bool) (*ProcfsHandle, error) {
+	proc, err := privateProcRoot(subset)
 	if err != nil {
 		// Fall back to using a /proc handle if making a private mount failed.
 		// If we have openat2, at least we can avoid some kinds of over-mount
 		// attacks, but without openat2 there's not much we can do.
-		procRoot, err = unsafeHostProcRoot()
+		proc, err = unsafeHostProcRoot()
 	}
-	return procRoot, err
+	return proc, err
 }
 
 var hasProcThreadSelf = gocompat.SyncOnceValue(func() bool {
@@ -257,26 +306,64 @@ var hasProcThreadSelf = gocompat.SyncOnceValue(func() bool {
 
 var errUnsafeProcfs = errors.New("unsafe procfs detected")
 
-// procOpen is a very minimal wrapper around [procfsLookupInRoot] which is
+// lookup is a very minimal wrapper around [procfsLookupInRoot] which is
 // intended to be called from the external API.
-func procOpen(procRoot *os.File, subpath string) (*os.File, error) {
-	// If called from the external API, procRoot will be nil, so just get the
-	// global root handle. It's also possible one of our tests calls this with
-	// nil by accident, so we should handle the case anyway.
-	if procRoot == nil {
-		root, err := getProcRootSubset() // default to subset=pids
-		if err != nil {
-			return nil, err
-		}
-		procRoot = root
-		defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
-	}
-
-	handle, err := procfsLookupInRoot(procRoot, subpath)
+func (proc *ProcfsHandle) lookup(subpath string) (*os.File, error) {
+	handle, err := procfsLookupInRoot(proc.inner, subpath)
 	if err != nil {
 		return nil, err
 	}
 	return handle, nil
+}
+
+// procfsBase is an enum indicating the prefix of a subpath in operations
+// involving [ProcfsHandle]s.
+type procfsBase string
+
+const (
+	// ProcRoot refers to the root of the procfs (i.e., "/proc/<subpath>").
+	ProcRoot procfsBase = "/proc"
+	// ProcSelf refers to the current process' subdirectory (i.e.,
+	// "/proc/self/<subpath>").
+	ProcSelf procfsBase = "/proc/self"
+	// ProcThreadSelf refers to the current thread's subdirectory (i.e.,
+	// "/proc/thread-self/<subpath>"). In multi-threaded programs (i.e., all Go
+	// programs) where one thread has a different CLONE_FS, it is possible for
+	// "/proc/self" to point the wrong thread and so "/proc/thread-self" may be
+	// necessary. Note that on pre-3.17 kernels, "/proc/thread-self" doesn't
+	// exist and so a fallback will be used in that case.
+	ProcThreadSelf procfsBase = "/proc/thread-self"
+	// TODO: Switch to an interface setup so we can have a more type-safe
+	// version of ProcPid and remove the need to worry about invalid string
+	// values.
+)
+
+// prefix returns a prefix that can be used with the given [ProcfsHandle].
+func (base procfsBase) prefix(proc *ProcfsHandle) (string, error) {
+	switch base {
+	case ProcRoot:
+		return ".", nil
+	case ProcSelf:
+		return "self", nil
+	case ProcThreadSelf:
+		threadSelf := "thread-self"
+		if !hasProcThreadSelf() || hookForceProcSelfTask() {
+			// Pre-3.17 kernels don't have /proc/thread-self, so do it
+			// manually.
+			threadSelf = "self/task/" + strconv.Itoa(unix.Gettid())
+			if err := faccessatFile(proc.inner, threadSelf, unix.F_OK, unix.AT_SYMLINK_NOFOLLOW); err != nil || hookForceProcSelf() {
+				// In this case, we running in a pid namespace that doesn't
+				// match the /proc mount we have. This can happen inside runc.
+				//
+				// Unfortunately, there is no nice way to get the correct TID
+				// to use here because of the age of the kernel, so we have to
+				// just use /proc/self and hope that it works.
+				threadSelf = "self"
+			}
+		}
+		return threadSelf, nil
+	}
+	return "", fmt.Errorf("invalid procfs base %q", base)
 }
 
 // ProcThreadSelfCloser is a callback that needs to be called when you are done
@@ -285,107 +372,112 @@ func procOpen(procRoot *os.File, subpath string) (*os.File, error) {
 // [os.File]: https://pkg.go.dev/os#File
 type ProcThreadSelfCloser func()
 
-func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThreadSelfCloser, Err error) {
-	// If called from the external API, procRoot will be nil, so just get the
-	// global root handle. It's also possible one of our tests calls this with
-	// nil by accident, so we should handle the case anyway.
-	if procRoot == nil {
-		root, err := getProcRootSubset() // subset=pids
-		if err != nil {
-			return nil, nil, err
-		}
-		procRoot = root
-		defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
-	}
-
-	// We need to lock our thread until the caller is done with the handle
-	// because between getting the handle and using it we could get interrupted
-	// by the Go runtime and hit the case where the underlying thread is
-	// swapped out and the original thread is killed, resulting in
-	// pull-your-hair-out-hard-to-debug issues in the caller.
-	runtime.LockOSThread()
-	defer func() {
-		if Err != nil {
-			runtime.UnlockOSThread()
-		}
-	}()
-
-	// Figure out what prefix we want to use.
-	threadSelf := "thread-self/"
-	if !hasProcThreadSelf() || hookForceProcSelfTask() {
-		/// Pre-3.17 kernels don't have /proc/thread-self, so do it manually.
-		threadSelf = "self/task/" + strconv.Itoa(unix.Gettid()) + "/"
-		if err := faccessatFile(procRoot, threadSelf, unix.F_OK, unix.AT_SYMLINK_NOFOLLOW); err != nil || hookForceProcSelf() {
-			// In this case, we running in a pid namespace that doesn't match
-			// the /proc mount we have. This can happen inside runc.
-			//
-			// Unfortunately, there is no nice way to get the correct TID to
-			// use here because of the age of the kernel, so we have to just
-			// use /proc/self and hope that it works.
-			threadSelf = "self/"
-		}
-	}
-
-	handle, err := procOpen(procRoot, threadSelf+subpath)
+// Open is the core lookup operation for [ProcfsHandle]. It returns a handle to
+// "/proc/<base>/<subpath>". If the returned [ProcThreadSelfCloser] is non-nil,
+// you should call it after you are done interacting with the returned handle.
+//
+// In general you should use prefer to use the other helpers, as they remove
+// the need to interact with [procfsBase] and do not return a nil
+// [ProcThreadSelfCloser] for [procfsBase] values other than [ProcThreadSelf]
+// where it is necessary.
+func (proc *ProcfsHandle) open(base procfsBase, subpath string) (_ *os.File, closer ProcThreadSelfCloser, Err error) {
+	prefix, err := base.prefix(proc)
 	if err != nil {
 		return nil, nil, err
 	}
-	return handle, runtime.UnlockOSThread, nil
+	subpath = prefix + "/" + subpath
+
+	switch base {
+	case ProcRoot:
+		file, err := proc.lookup(subpath)
+		if errors.Is(err, os.ErrNotExist) {
+			// The ProcfsHandle handle in use might be a subset=pid one, which
+			// will result in spurious errors. In this case, just open a
+			// temporary unmasked procfs handle for this operation.
+			proc, err2 := OpenUnsafeProcRoot() // !subset=pid
+			if err2 != nil {
+				return nil, nil, err
+			}
+			defer proc.Close() //nolint:errcheck // close failures aren't critical here
+
+			file, err = proc.lookup(subpath)
+		}
+		return file, nil, err
+
+	case ProcSelf:
+		file, err := proc.lookup(subpath)
+		return file, nil, err
+
+	case ProcThreadSelf:
+		// We need to lock our thread until the caller is done with the handle
+		// because between getting the handle and using it we could get
+		// interrupted by the Go runtime and hit the case where the underlying
+		// thread is swapped out and the original thread is killed, resulting
+		// in pull-your-hair-out-hard-to-debug issues in the caller.
+		runtime.LockOSThread()
+		defer func() {
+			if Err != nil {
+				runtime.UnlockOSThread()
+				closer = nil
+			}
+		}()
+
+		file, err := proc.lookup(subpath)
+		return file, runtime.UnlockOSThread, err
+	}
+	// should never be reached
+	return nil, nil, fmt.Errorf("[internal error] invalid procfs base %q", base)
 }
 
-// ProcThreadSelf returns a handle to /proc/thread-self/<subpath> (or an
-// equivalent handle on older kernels where /proc/thread-self doesn't exist).
+// OpenThreadSelf returns a handle to "/proc/thread-self/<subpath>" (or an
+// equivalent handle on older kernels where "/proc/thread-self" doesn't exist).
 // Once finished with the handle, you must call the returned closer function
 // (runtime.UnlockOSThread). You must not pass the returned *os.File to other
 // Go threads or use the handle after calling the closer.
-//
-// This is similar to ProcThreadSelf from runc, but with extra hardening
-// applied and using *os.File.
-func ProcThreadSelf(subpath string) (*os.File, ProcThreadSelfCloser, error) {
-	return procThreadSelf(nil, subpath)
+func (proc *ProcfsHandle) OpenThreadSelf(subpath string) (_ *os.File, _ ProcThreadSelfCloser, Err error) {
+	return proc.open(ProcThreadSelf, subpath)
 }
 
-// ProcSelf returns a handle to /proc/self/<subpath>.
+// OpenSelf returns a handle to /proc/self/<subpath>.
 //
 // Note that in Go programs with non-homogenous threads, this may result in
 // spurious errors. If you are monkeying around with APIs that are
 // thread-specific, you probably want to use [ProcThreadSelf] instead which
 // will guarantee that the handle refers to the same thread as the caller is
 // executing on.
-func ProcSelf(subpath string) (*os.File, error) {
-	return procOpen(nil, "self/"+subpath)
+func (proc *ProcfsHandle) OpenSelf(subpath string) (*os.File, error) {
+	file, closer, err := proc.open(ProcSelf, subpath)
+	assert.Assert(closer == nil, "closer for ProcSelf must be nil")
+	return file, err
 }
 
-// ProcPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
+// OpenRoot returns a handle to /proc/<subpath>.
+//
+// You should only use this when you need to operate on global procfs files
+// (such as sysctls in /proc/sys). Unlike [OpenThreadSelf], [OpenSelf], and
+// [ProcPid], the procfs handle used internally for this operation will never
+// use subset=pids, which makes it a more juicy target for CVE-2024-21626-style
+// attacks.
+func (proc *ProcfsHandle) OpenRoot(subpath string) (*os.File, error) {
+	file, closer, err := proc.open(ProcRoot, subpath)
+	assert.Assert(closer == nil, "closer for ProcRoot must be nil")
+	return file, err
+}
+
+// OpenPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
 // This is mainly intended for usage when operating on other processes.
 //
 // You should not use this for the current thread, as special handling is
 // needed for /proc/thread-self (or /proc/self/task/<tid>) when dealing with
-// goroutine scheduling -- use [ProcThreadSelf] instead.
+// goroutine scheduling -- use [OpenThreadSelf] instead.
 //
-// To refer to the current thread-group, you should use prefer [ProcSelf] to
+// To refer to the current thread-group, you should use prefer [OpenSelf] to
 // passing os.Getpid as the pid argument.
 //
 // If you want to operate on the top-level /proc filesystem, you should use
-// [ProcRoot] instead.
-func ProcPid(pid int, subpath string) (*os.File, error) {
-	return procOpen(nil, strconv.Itoa(pid)+"/"+subpath)
-}
-
-// ProcRoot returns a handle to /proc/<subpath>.
-//
-// You should only use this when you need to operate on global procfs files
-// (such as sysctls in /proc/sys). Unlike [ProcThreadSelf], [ProcSelf], and
-// [ProcPid], the procfs handle used internally for this operation will never
-// use subset=pids, which makes it a more juicy target for CVE-2024-21626-style
-// attacks.
-func ProcRoot(subpath string) (*os.File, error) {
-	procRoot, err := getProcRootUnmasked() // !subset=pids
-	if err != nil {
-		return nil, err
-	}
-	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
-	return procOpen(procRoot, subpath)
+// [OpenRoot] instead.
+func (proc *ProcfsHandle) OpenPid(pid int, subpath string) (*os.File, error) {
+	return proc.OpenRoot(strconv.Itoa(pid) + "/" + subpath)
 }
 
 const (
@@ -455,14 +547,20 @@ func checkSubpathOvermount(procRoot *os.File, dir *os.File, path string) error {
 	return nil
 }
 
-func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
-	fdPath := fmt.Sprintf("fd/%d", fd)
-	procFdLink, closer, err := procThreadSelf(procRoot, fdPath)
-	if err != nil {
-		return "", fmt.Errorf("get safe /proc/thread-self/%s handle: %w", fdPath, err)
+// readlink performs a readlink operation on "/proc/<base>/<subpath>" in a way
+// that should be free from race attacks. This is most commonly used to get the
+// real path of a file by looking at "/proc/self/fd/$n", with the same safety
+// protections as [Open] (as well as some additional checks against
+// overmounts).
+func (proc *ProcfsHandle) readlink(base procfsBase, subpath string) (string, error) {
+	link, closer, err := proc.open(base, subpath)
+	if closer != nil {
+		defer closer()
 	}
-	defer procFdLink.Close() //nolint:errcheck // close failures aren't critical here
-	defer closer()
+	if err != nil {
+		return "", fmt.Errorf("get safe %s/%s handle: %w", base, subpath, err)
+	}
+	defer link.Close() //nolint:errcheck // close failures aren't critical here
 
 	// Try to detect if there is a mount on top of the magic-link. This should
 	// be safe in general (a mount on top of the path afterwards would not
@@ -473,30 +571,34 @@ func doRawProcSelfFdReadlink(procRoot *os.File, fd int) (string, error) {
 	//
 	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
 	// onto targets that reside on shared mounts").
-	if err := checkSubpathOvermount(procRoot, procFdLink, ""); err != nil {
-		return "", fmt.Errorf("check safety of /proc/thread-self/fd/%d magiclink: %w", fd, err)
+	if err := checkSubpathOvermount(proc.inner, link, ""); err != nil {
+		return "", fmt.Errorf("check safety of %s/%s magiclink: %w", base, subpath, err)
 	}
 
 	// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See Linux commit
 	// 65cfc6722361 ("readlinkat(), fchownat() and fstatat() with empty
 	// relative pathnames").
-	return readlinkatFile(procFdLink, "")
+	return readlinkatFile(link, "")
 }
 
 func rawProcSelfFdReadlink(fd int) (string, error) {
-	procRoot, err := getProcRootSubset() // subset=pids
+	procRoot, err := OpenProcRoot() // subset=pid
 	if err != nil {
 		return "", err
 	}
 	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
-	return doRawProcSelfFdReadlink(procRoot, fd)
+
+	return procRoot.readlink(ProcThreadSelf, "fd/"+strconv.Itoa(fd))
 }
 
 // ProcSelfFdReadlink gets the real path of the given file by looking at
-// readlink(/proc/thread-self/fd/$n), with the same safety protections as
-// [ProcThreadSelf] (as well as some additional checks against overmounts).
+// readlink(/proc/thread-self/fd/$n).
+//
+// This is just a wrapper around [ProcfsHandle.Readlink].
 func ProcSelfFdReadlink(f *os.File) (string, error) {
-	return rawProcSelfFdReadlink(int(f.Fd()))
+	linkname, err := rawProcSelfFdReadlink(int(f.Fd()))
+	runtime.KeepAlive(f)
+	return linkname, err
 }
 
 var (

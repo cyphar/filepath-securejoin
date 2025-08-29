@@ -12,57 +12,37 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 > License (version 2).
 
 ### Added ###
-- Some minimal parts of the safe `procfs` API have now been exposed. At the
-  moment these include:
+- Most of the key bits the safe `procfs` API have now been exposed. At the
+  moment this primarily consists of a new `ProcfsHandle` API:
 
-   * `ProcThreadSelf` which allows you to get a safe handle `O_PATH` to a
-     subpath in `/proc/thread-self` (you can upgrade it to a proper handle with
-     `Reopen` like any other `O_PATH` handle). The returned
-     `ProcThreadSelfCloser` needs to be called after you completely finish
-     using the handle (this is necessary because Go is multi-threaded and
-     `ProcThreadSelf` references `/proc/thread-self` which may disappear if we
-     do not `runtime.LockOSThread` -- `ProcThreadSelfCloser` is currently
-     equivalent to `runtime.UnlockOSThread`).
+   * `OpenProcRoot` returns a new handle to `/proc`, endeavouring to make it
+     safe if possible (`subset=pid` to protect against mistaken write attacks
+     and leaks, as well as using `fsopen(2)` to avoid racing mount attacks).
 
-     Note that you cannot operate on any `procfs` symlinks (most notably
-     magiclinks) using this API. At the moment `filepath-securejoin` does not
-     support this feature (but [libpathrs][] does).
+     `OpenUnsafeProcRoot` returns a handle without attempting to create one
+     with `subset=pid`, which makes it more dangerous to leak. Most users
+     should use `OpenProcRoot` (even if you need to use `ProcRoot` as the base
+     of an operation, as filepath-securejoin will internally open a handle when
+     necessary).
 
-   * `ProcSelf` is the `/proc/self` equivalent of `ProcThreadSelf`. Unlike
-     `ProcThreadSelf`, it is not necessary to lock the goroutine to the current
-     thread (since `/proc/self` refers to the thread-group leader and is not
-     intended for per-thread operations) and so no `ProcThreadSelfCloser`
-     closure will be returned.
+   * The `(*ProcfsHandle).Open*` family of methods lets you get a safe `O_PATH`
+     handle to subpaths within `/proc` for certain subpaths.
 
-   * `ProcPid` is very similar to `ProcThreadSelf`, except it lets you get
-     handles to subpaths of other processes.
+     For `OpenThreadSelf`, the returned `ProcThreadSelfCloser` needs to be
+     called after you completely finish using the handle (this is necessary
+     because Go is multi-threaded and `ProcThreadSelf` references
+     `/proc/thread-self` which may disappear if we do not
+     `runtime.LockOSThread` -- `ProcThreadSelfCloser` is currently equivalent
+     to `runtime.UnlockOSThread`).
 
-     Please note that it is possible for you to be unable to access processes
-     in certain configurations (when using `fsopen(2)`, the internal procfs
-     mount will have `subset=pids,hidepids=traceable` mount options applied,
-     which will hide many other processes and any non-process-related top-level
-     files). To operate on the current thread-group, prefer to use `ProcSelf`
-     rather than `ProcPid(os.Getpid(), ...)` because the latter will not
-     necessarily work properly in situations with complicated PID namespace
-     setups.
-
-     Also note that if the target process dies, the handle you received from
-     `ProcPid` may start returning errors or blank data when you operate on it.
-
-   * `ProcRoot` lets you get access to top-level `/proc` paths, which is
-     primarily useful for things like sysctls.
-
-     As this requires access to non-`subset=pids` paths, the internal
-     `fsopen("procfs")` handle is not restricted and so you should use this
-     method with care. Leaking this file descriptor (even in subtle ways) can
-     easily lead to very concerning [CVE-2024-21626][]-style bugs where a
-     privileged user could break out of containers.
+     Note that you cannot open any `procfs` symlinks (most notably magiclinks)
+     using this API. At the moment, filepath-securejoin does not support this
+     feature (but [libpathrs][] does).
 
    * `ProcSelfFdReadlink` lets you get the in-kernel path representation of a
-     file descriptor (think `readlink("/proc/self/fd/...")`). This is
-     equivalent to doing a `readlinkat(fd, "", ...)` of
-     `ProcThreadSelf("fd/%d")`, except that we verify that there aren't any
-     tricky overmounts that could fool the process.
+     file descriptor (think `readlink("/proc/self/fd/...")`), except that we
+     verify that there aren't any tricky overmounts that could fool the
+     process.
 
      Please be aware that the returned string is simply a snapshot at that
      particular moment, and an attacker could move the file being pointed to.

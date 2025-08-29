@@ -24,8 +24,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func newPrivateProcMountSubset() (*os.File, error)   { return newPrivateProcMount(true) }
-func newPrivateProcMountUnmasked() (*os.File, error) { return newPrivateProcMount(false) }
+func newPrivateProcMountSubset() (*ProcfsHandle, error)   { return newPrivateProcMount(true) }
+func newPrivateProcMountUnmasked() (*ProcfsHandle, error) { return newPrivateProcMount(false) }
 
 func doMount(t *testing.T, source, target, fsType string, flags uintptr) {
 	var sourcePath string
@@ -85,15 +85,8 @@ func setupMountNamespace(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func doProcThreadSelf(procRoot *os.File, subpath string) (*os.File, ProcThreadSelfCloser, error) {
-	if procRoot != nil {
-		return procThreadSelf(procRoot, subpath)
-	}
-	return ProcThreadSelf(subpath)
-}
-
-func testProcThreadSelf(t *testing.T, procRoot *os.File, subpath string, expectErr bool) {
-	handle, closer, err := doProcThreadSelf(procRoot, subpath)
+func testProcThreadSelf(t *testing.T, procRoot *ProcfsHandle, subpath string, expectErr bool) {
+	handle, closer, err := procRoot.OpenThreadSelf(subpath)
 	if expectErr {
 		assert.ErrorIsf(t, err, errUnsafeProcfs, "should have detected /proc/thread-self/%s overmount", subpath)
 	} else if assert.NoErrorf(t, err, "/proc/thread-self/%s open should succeed", subpath) {
@@ -102,7 +95,7 @@ func testProcThreadSelf(t *testing.T, procRoot *os.File, subpath string, expectE
 	}
 }
 
-type procRootFunc func() (*os.File, error)
+type procRootFunc func() (*ProcfsHandle, error)
 
 func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermounts bool) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
@@ -142,9 +135,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 
 		procRoot, err := procRootFn()
 		require.NoError(t, err)
-		if procRoot != nil {
-			defer procRoot.Close() //nolint:errcheck // test code
-		}
+		defer procRoot.Close() //nolint:errcheck // test code
 
 		// For both tmpfs and procfs overmounts, we should catch them (with or
 		// without openat2, thanks to procfsLookupInRoot).
@@ -157,7 +148,7 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 			symlinkOvermountErr = nil
 		}
 
-		procSelf, closer, err := doProcThreadSelf(procRoot, ".")
+		procSelf, closer, err := procRoot.OpenThreadSelf(".")
 		require.NoError(t, err)
 		defer procSelf.Close() //nolint:errcheck // test code
 		defer closer()
@@ -172,32 +163,22 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		require.NoError(t, err)
 		defer procExe.Close() //nolint:errcheck // test code
 
-		testProcRoot := procRoot
-		if testProcRoot == nil {
-			// If using the external API, we cannot get the procfs handled used
-			// directly (because it gets created anew for each operation), so
-			// instead just reuse procSelf for this.
-			testProcRoot, err = openatFile(procSelf, "../../..", unix.O_PATH, 0)
-			require.NoError(t, err)
-			defer testProcRoot.Close() //nolint:errcheck // test code
-		}
-
 		// no overmount
-		err = checkSubpathOvermount(testProcRoot, procCwd, "")
+		err = checkSubpathOvermount(procRoot.inner, procCwd, "")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSubpathOvermount(testProcRoot, procSelf, "cwd")
+		err = checkSubpathOvermount(procRoot.inner, procSelf, "cwd")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// basic overmount
-		err = checkSubpathOvermount(testProcRoot, procExe, "")
+		err = checkSubpathOvermount(procRoot.inner, procExe, "")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSubpathOvermount(testProcRoot, procSelf, "exe")
+		err = checkSubpathOvermount(procRoot.inner, procSelf, "exe")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// fd no overmount
-		_, err = doRawProcSelfFdReadlink(testProcRoot, 1)
+		_, err = procRoot.readlink(ProcThreadSelf, "fd/1")
 		assert.NoError(t, err, "checking /proc/self/fd/1 with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// fd overmount
-		link, err := doRawProcSelfFdReadlink(testProcRoot, 0)
+		link, err := procRoot.readlink(ProcThreadSelf, "fd/0")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/fd/0 overmount result: got link %q", link) //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
@@ -241,21 +222,22 @@ func TestProcOvermountSubdir_clonePrivateProcMount(t *testing.T) {
 	})
 }
 
-func TestProcOvermountSubdir_getProcRootSubset(t *testing.T) {
+func TestProcOvermountSubdir_OpenProcRoot(t *testing.T) {
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
-		testProcOvermountSubdir(t, getProcRootSubset, !hasNewMountAPI())
+		procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+		testProcOvermountSubdir(t, procRootFn, !hasNewMountAPI())
 	})
 }
 
-func TestProcOvermountSubdir_getProcRootUnmasked(t *testing.T) {
+func TestProcOvermountSubdir_OpenUnsafeProcRoot(t *testing.T) {
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
-		testProcOvermountSubdir(t, getProcRootUnmasked, !hasNewMountAPI())
+		testProcOvermountSubdir(t, OpenUnsafeProcRoot, !hasNewMountAPI())
 	})
 }
 
@@ -265,35 +247,29 @@ func TestProcOvermountSubdir_getProcRootSubset_Mocked(t *testing.T) {
 	}
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
-			testProcOvermountSubdir(t, getProcRootSubset, expectOvermounts)
-		})
-	})
-}
-
-func TestProcOvermountSubdir_ProcThreadSelf(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
-		testForceProcThreadSelf(t, func(t *testing.T) {
-			dummyGetRoot := func() (*os.File, error) { return nil, nil } //nolint:nilnil // intentional
-			// Use the same overmounts policy as getProcRoot.
-			testProcOvermountSubdir(t, dummyGetRoot, !hasNewMountAPI())
+			procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+			testProcOvermountSubdir(t, procRootFn, expectOvermounts)
 		})
 	})
 }
 
 // isFsopenRoot returns whether the internal procfs handle is an fsopen root.
 func isFsopenRoot(t *testing.T) bool {
-	procRoot, err := getProcRootUnmasked()
+	procRoot, err := OpenUnsafeProcRoot() // !subset=pid
 	require.NoError(t, err)
-	return procRoot.Name() == "fsmount:fscontext:proc"
+	return procRoot.inner.Name() == "fsmount:fscontext:proc"
 }
 
 // Because of the introduction of protections against /proc overmounts,
 // ProcThreadSelf will not be called in actual tests unless we have a basic
 // test here.
 func TestProcThreadSelf(t *testing.T) {
+	proc, err := OpenProcRoot()
+	require.NoError(t, err)
+
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		t.Run("stat", func(t *testing.T) {
-			handle, closer, err := ProcThreadSelf("stat")
+			handle, closer, err := proc.OpenThreadSelf("stat")
 			require.NoError(t, err, "ProcThreadSelf(stat)")
 			require.NotNil(t, handle, "ProcThreadSelf(stat) handle")
 			require.NotNil(t, closer, "ProcThreadSelf(stat) closer")
@@ -311,7 +287,7 @@ func TestProcThreadSelf(t *testing.T) {
 		})
 
 		t.Run("abspath", func(t *testing.T) {
-			handle, closer, err := ProcThreadSelf("/stat")
+			handle, closer, err := proc.OpenThreadSelf("/stat")
 			require.NoError(t, err, "ProcThreadSelf(/stat)")
 			require.NotNil(t, handle, "ProcThreadSelf(/stat) handle")
 			require.NotNil(t, closer, "ProcThreadSelf(/stat) closer")
@@ -329,7 +305,7 @@ func TestProcThreadSelf(t *testing.T) {
 		})
 
 		t.Run("wacky-abspath", func(t *testing.T) {
-			handle, closer, err := ProcThreadSelf("////./////stat")
+			handle, closer, err := proc.OpenThreadSelf("////./////stat")
 			require.NoError(t, err, "ProcThreadSelf(////./////stat)")
 			require.NotNil(t, handle, "ProcThreadSelf(////./////stat) handle")
 			require.NotNil(t, closer, "ProcThreadSelf(////./////stat) closer")
@@ -347,14 +323,14 @@ func TestProcThreadSelf(t *testing.T) {
 		})
 
 		t.Run("dotdot", func(t *testing.T) {
-			handle, closer, err := ProcThreadSelf("../../../../../../../../..")
+			handle, closer, err := proc.OpenThreadSelf("../../../../../../../../..")
 			require.Error(t, err, "ProcThreadSelf(../...)")
 			require.Nil(t, handle, "ProcThreadSelf(../...) handle")
 			require.Nil(t, closer, "ProcThreadSelf(../...) closer")
 		})
 
 		t.Run("wacky-dotdot", func(t *testing.T) {
-			handle, closer, err := ProcThreadSelf("/../../../../../../../../..")
+			handle, closer, err := proc.OpenThreadSelf("/../../../../../../../../..")
 			require.Error(t, err, "ProcThreadSelf(/../...)")
 			require.Nil(t, handle, "ProcThreadSelf(/../...) handle")
 			require.Nil(t, closer, "ProcThreadSelf(/../...) closer")
@@ -363,9 +339,12 @@ func TestProcThreadSelf(t *testing.T) {
 }
 
 func TestProcSelf(t *testing.T) {
+	proc, err := OpenProcRoot()
+	require.NoError(t, err)
+
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		t.Run("stat", func(t *testing.T) {
-			handle, err := ProcSelf("stat")
+			handle, err := proc.OpenSelf("stat")
 			require.NoError(t, err, "ProcSelf(stat)")
 			require.NotNil(t, handle, "ProcSelf(stat) handle")
 			defer handle.Close() //nolint:errcheck // test code
@@ -381,7 +360,7 @@ func TestProcSelf(t *testing.T) {
 		})
 
 		t.Run("abspath", func(t *testing.T) {
-			handle, err := ProcSelf("/stat")
+			handle, err := proc.OpenSelf("/stat")
 			require.NoError(t, err, "ProcSelf(/stat)")
 			require.NotNil(t, handle, "ProcSelf(/stat) handle")
 			defer handle.Close() //nolint:errcheck // test code
@@ -397,7 +376,7 @@ func TestProcSelf(t *testing.T) {
 		})
 
 		t.Run("wacky-abspath", func(t *testing.T) {
-			handle, err := ProcSelf("////./////stat")
+			handle, err := proc.OpenSelf("////./////stat")
 			require.NoError(t, err, "ProcSelf(////./////stat)")
 			require.NotNil(t, handle, "ProcSelf(////./////stat) handle")
 			defer handle.Close() //nolint:errcheck // test code
@@ -413,13 +392,13 @@ func TestProcSelf(t *testing.T) {
 		})
 
 		t.Run("dotdot", func(t *testing.T) {
-			handle, err := ProcSelf("../../../../../../../../..")
+			handle, err := proc.OpenSelf("../../../../../../../../..")
 			require.Error(t, err, "ProcSelf(../...)")
 			require.Nil(t, handle, "ProcSelf(../...) handle")
 		})
 
 		t.Run("wacky-dotdot", func(t *testing.T) {
-			handle, err := ProcSelf("/../../../../../../../../..")
+			handle, err := proc.OpenSelf("/../../../../../../../../..")
 			require.Error(t, err, "ProcSelf(/../...)")
 			require.Nil(t, handle, "ProcSelf(/../...) handle")
 		})
@@ -427,9 +406,12 @@ func TestProcSelf(t *testing.T) {
 }
 
 func TestProcPid(t *testing.T) {
+	proc, err := OpenProcRoot()
+	require.NoError(t, err)
+
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		t.Run("pid1-stat", func(t *testing.T) {
-			handle, err := ProcPid(1, "stat")
+			handle, err := proc.OpenPid(1, "stat")
 			require.NoError(t, err, "ProcPid(1, stat)")
 			require.NotNil(t, handle, "ProcPid(1, stat) handle")
 
@@ -444,7 +426,7 @@ func TestProcPid(t *testing.T) {
 		})
 
 		t.Run("pid1-stat-abspath", func(t *testing.T) {
-			handle, err := ProcPid(1, "/stat")
+			handle, err := proc.OpenPid(1, "/stat")
 			require.NoError(t, err, "ProcPid(1, /stat)")
 			require.NotNil(t, handle, "ProcPid(1, /stat) handle")
 
@@ -459,7 +441,7 @@ func TestProcPid(t *testing.T) {
 		})
 
 		t.Run("pid1-stat-wacky-abspath", func(t *testing.T) {
-			handle, err := ProcPid(1, "////.////stat")
+			handle, err := proc.OpenPid(1, "////.////stat")
 			require.NoError(t, err, "ProcPid(1, ////.////stat)")
 			require.NotNil(t, handle, "ProcPid(1, ////.////stat) handle")
 
@@ -474,13 +456,13 @@ func TestProcPid(t *testing.T) {
 		})
 
 		t.Run("dotdot", func(t *testing.T) {
-			handle, err := ProcPid(1, "../../../../../../../../..")
+			handle, err := proc.OpenPid(1, "../../../../../../../../..")
 			require.Error(t, err, "ProcPid(1, ../...)")
 			require.Nil(t, handle, "ProcPid(1, ../...) handle")
 		})
 
 		t.Run("wacky-dotdot", func(t *testing.T) {
-			handle, err := ProcPid(1, "/../../../../../../../../..")
+			handle, err := proc.OpenPid(1, "/../../../../../../../../..")
 			require.Error(t, err, "ProcPid(1, /../...)")
 			require.Nil(t, handle, "ProcPid(1, /../...) handle")
 		})
@@ -488,22 +470,36 @@ func TestProcPid(t *testing.T) {
 }
 
 func TestProcRoot(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
-		t.Run("sysctl", func(t *testing.T) {
-			handle, err := ProcRoot("sys/kernel/version")
-			require.NoError(t, err, "ProcRoot(sys/kernel/version)")
-			require.NotNil(t, handle, "ProcPid(sys/kernel/version) handle")
-
-			realPath, err := ProcSelfFdReadlink(handle)
+	for _, test := range []struct {
+		name       string
+		procRootFn procRootFunc
+	}{
+		{"OpenProcRoot", OpenProcRoot},
+		{"OpenUnsafeProcRoot", OpenUnsafeProcRoot},
+	} {
+		test := test // copy iterator
+		t.Run(test.name, func(t *testing.T) {
+			proc, err := test.procRootFn()
 			require.NoError(t, err)
-			wantPath := "/sys/kernel/version"
-			if !isFsopenRoot(t) {
-				// The /proc prefix is only present when not using fsopen.
-				wantPath = "/proc" + wantPath
-			}
-			assert.Equal(t, wantPath, realPath, "final handle path")
+
+			withWithoutOpenat2(t, true, func(t *testing.T) {
+				t.Run("sysctl", func(t *testing.T) {
+					handle, err := proc.OpenRoot("sys/kernel/version")
+					require.NoError(t, err, "ProcRoot(sys/kernel/version)")
+					require.NotNil(t, handle, "ProcPid(sys/kernel/version) handle")
+
+					realPath, err := ProcSelfFdReadlink(handle)
+					require.NoError(t, err)
+					wantPath := "/sys/kernel/version"
+					if !isFsopenRoot(t) {
+						// The /proc prefix is only present when not using fsopen.
+						wantPath = "/proc" + wantPath
+					}
+					assert.Equal(t, wantPath, realPath, "final handle path")
+				})
+			})
 		})
-	})
+	}
 }
 
 func canFsOpen() bool {
@@ -535,8 +531,8 @@ func testProcOvermount(t *testing.T, procRootFn procRootFunc, privateProcMount b
 					defer procRoot.Close() //nolint:errcheck // test code
 				}
 				if privateProcMount {
-					assert.NoError(t, err, "get proc handle should succeed")                                //nolint:testifylint
-					assert.NoError(t, verifyProcRoot(procRoot), "verify private proc mount should succeed") //nolint:testifylint
+					assert.NoError(t, err, "get proc handle should succeed")                                      //nolint:testifylint
+					assert.NoError(t, verifyProcRoot(procRoot.inner), "verify private proc mount should succeed") //nolint:testifylint
 				} else {
 					if !assert.ErrorIs(t, err, errUnsafeProcfs, "get proc handle should fail") { //nolint:testifylint
 						t.Logf("procRootFn() = %v, %v", procRoot, err)
@@ -572,18 +568,20 @@ func TestProcOvermount_newPrivateProcMountUnmasked(t *testing.T) {
 	testProcOvermount(t, newPrivateProcMountUnmasked, true)
 }
 
-func TestProcOvermount_getProcRootSubset(t *testing.T) {
+func TestProcOvermount_OpenProcRoot(t *testing.T) {
 	privateProcMount := canFsOpen() && !testingForcePrivateProcRootOpenTree(nil)
-	testProcOvermount(t, getProcRootSubset, privateProcMount)
+	procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+	testProcOvermount(t, procRootFn, privateProcMount)
 }
 
-func TestProcOvermount_getProcRootSubset_Mocked(t *testing.T) {
+func TestProcOvermount_OpenProcRoot_Mocked(t *testing.T) {
 	if !hasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
 	testForceGetProcRoot(t, func(t *testing.T, _ bool) {
 		privateProcMount := canFsOpen() && !testingForcePrivateProcRootOpenTree(nil)
-		testProcOvermount(t, getProcRootSubset, privateProcMount)
+		procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+		testProcOvermount(t, procRootFn, privateProcMount)
 	})
 }
 

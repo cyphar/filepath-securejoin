@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/kernelversion"
 )
 
 func fstat(f *os.File) (unix.Stat_t, error) {
@@ -75,7 +76,7 @@ func verifyProcRoot(procRoot *os.File) error {
 
 var hasNewMountAPI = gocompat.SyncOnceValue(func() bool {
 	// All of the pieces of the new mount API we use (fsopen, fsconfig,
-	// fsmount, open_tree) were added together in Linux 5.1[1,2], so we can
+	// fsmount, open_tree) were added together in Linux 5.2[1,2], so we can
 	// just check for one of the syscalls and the others should also be
 	// available.
 	//
@@ -91,7 +92,12 @@ var hasNewMountAPI = gocompat.SyncOnceValue(func() bool {
 		return false
 	}
 	_ = unix.Close(fd)
-	return true
+
+	// RHEL 8 has a backport of fsopen(2) that appears to have some very
+	// difficult to debug performance pathology. As such, it seems prudent to
+	// simply reject pre-5.2 kernels.
+	isNotBackport, _ := kernelversion.GreaterEqualThan(kernelversion.KernelVersion{5, 2})
+	return isNotBackport
 })
 
 func fsopen(fsName string, flags int) (*os.File, error) {

@@ -19,6 +19,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
 var (
@@ -124,7 +126,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 	}
 
 	remainingParts := strings.Split(remainingPath, string(filepath.Separator))
-	if slices_Contains(remainingParts, "..") {
+	if gocompat.SlicesContains(remainingParts, "..") {
 		// The path contained ".." components after the end of the "real"
 		// components. We could try to safely resolve ".." here but that would
 		// add a bunch of extra logic for something that it's not clear even
@@ -160,7 +162,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 				// multiple %w verbs for this wrapping. For now we need to use a
 				// compatibility shim for older Go versions.
 				// err = fmt.Errorf("%w (%w)", err, deadErr)
-				err = wrapBaseError(err, deadErr)
+				err = gocompat.WrapBaseError(err, deadErr)
 			}
 			return nil, err
 		}

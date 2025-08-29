@@ -20,9 +20,11 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
-var hasOpenat2 = sync_OnceValue(func() bool {
+var hasOpenat2 = gocompat.SyncOnceValue(func() bool {
 	fd, err := unix.Openat2(unix.AT_FDCWD, ".", &unix.OpenHow{
 		Flags:   unix.O_PATH | unix.O_CLOEXEC,
 		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_IN_ROOT,

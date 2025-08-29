@@ -22,6 +22,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
 type partialLookupFunc func(root *os.File, unsafePath string) (*os.File, string, error)
@@ -475,36 +477,36 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			allowedResults     []lookupResult
 		}{
 			// Swap a symlink in and out.
-			"swap-dir-link1-basic":   {"a/b", "b-link", "a/b/c/d/e", nil, slices_Clone(defaultExpected)},
-			"swap-dir-link2-basic":   {"a/b/c", "c-link", "a/b/c/d/e", nil, slices_Clone(defaultExpected)},
-			"swap-dir-link1-dotdot1": {"a/b", "b-link", "a/b/../b/../b/../b/../b/../b/../b/c/d/../d/../d/../d/../d/../d/e", nil, slices_Clone(defaultExpected)},
-			"swap-dir-link1-dotdot2": {"a/b", "b-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", nil, slices_Clone(defaultExpected)},
-			"swap-dir-link2-dotdot":  {"a/b/c", "c-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", nil, slices_Clone(defaultExpected)},
+			"swap-dir-link1-basic":   {"a/b", "b-link", "a/b/c/d/e", nil, gocompat.SlicesClone(defaultExpected)},
+			"swap-dir-link2-basic":   {"a/b/c", "c-link", "a/b/c/d/e", nil, gocompat.SlicesClone(defaultExpected)},
+			"swap-dir-link1-dotdot1": {"a/b", "b-link", "a/b/../b/../b/../b/../b/../b/../b/c/d/../d/../d/../d/../d/../d/e", nil, gocompat.SlicesClone(defaultExpected)},
+			"swap-dir-link1-dotdot2": {"a/b", "b-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", nil, gocompat.SlicesClone(defaultExpected)},
+			"swap-dir-link2-dotdot":  {"a/b/c", "c-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", nil, gocompat.SlicesClone(defaultExpected)},
 			// TODO: Swap a directory.
 			// Swap a non-directory.
 			"swap-dir-file-basic": {"a/b", "file", "a/b/c/d/e", []error{unix.ENOTDIR, unix.ENOENT}, append(
 				// We could hit one of the final paths.
-				slices_Clone(defaultExpected),
+				gocompat.SlicesClone(defaultExpected),
 				// We could hit the file and stop resolving.
 				lookupResult{handlePath: "/file", remainingPath: "c/d/e", fileType: unix.S_IFREG},
 			)},
 			"swap-dir-file-dotdot": {"a/b", "file", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", []error{unix.ENOTDIR, unix.ENOENT}, append(
 				// We could hit one of the final paths.
-				slices_Clone(defaultExpected),
+				gocompat.SlicesClone(defaultExpected),
 				// We could hit the file and stop resolving.
 				lookupResult{handlePath: "/file", remainingPath: "c/d/e", fileType: unix.S_IFREG},
 			)},
 			// Swap a dangling symlink.
-			"swap-dir-danglinglink-basic":  {"a/b", "bad-link", "a/b/c/d/e", []error{unix.ENOENT}, slices_Clone(defaultExpected)},
-			"swap-dir-danglinglink-dotdot": {"a/b", "bad-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", []error{unix.ENOENT}, slices_Clone(defaultExpected)},
+			"swap-dir-danglinglink-basic":  {"a/b", "bad-link", "a/b/c/d/e", []error{unix.ENOENT}, gocompat.SlicesClone(defaultExpected)},
+			"swap-dir-danglinglink-dotdot": {"a/b", "bad-link", "a/b/c/../c/../c/../c/../c/../c/../c/d/../d/../d/../d/../d/../d/e", []error{unix.ENOENT}, gocompat.SlicesClone(defaultExpected)},
 			// Swap the root.
-			"swap-root-basic":        {".", "../outsideroot", "a/b/c/d/e", nil, slices_Clone(defaultExpected)},
-			"swap-root-dotdot":       {".", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, slices_Clone(defaultExpected)},
-			"swap-root-dotdot-extra": {".", "../outsideroot", "a/" + strings.Repeat("b/c/d/../../../", 10) + "b/c/d/e", nil, slices_Clone(defaultExpected)},
+			"swap-root-basic":        {".", "../outsideroot", "a/b/c/d/e", nil, gocompat.SlicesClone(defaultExpected)},
+			"swap-root-dotdot":       {".", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, gocompat.SlicesClone(defaultExpected)},
+			"swap-root-dotdot-extra": {".", "../outsideroot", "a/" + strings.Repeat("b/c/d/../../../", 10) + "b/c/d/e", nil, gocompat.SlicesClone(defaultExpected)},
 			// Swap one of our walking paths outside the root.
 			"swap-dir-outsideroot-basic": {"a/b", "../outsideroot", "a/b/c/d/e", nil, append(
 				// We could hit the expected path.
-				slices_Clone(defaultExpected),
+				gocompat.SlicesClone(defaultExpected),
 				// We could also land in the "outsideroot" path. This is okay
 				// because there was a moment when this directory was inside
 				// the root, and the attacker moved it outside the root. If we
@@ -516,7 +518,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			)},
 			"swap-dir-outsideroot-dotdot": {"a/b", "../outsideroot", "a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/../../a/b/c/d/e", nil, append(
 				// We could hit the expected path.
-				slices_Clone(defaultExpected),
+				gocompat.SlicesClone(defaultExpected),
 				// We could also land in the "outsideroot" path. This is okay
 				// because there was a moment when this directory was inside
 				// the root, and the attacker moved it outside the root.

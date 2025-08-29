@@ -3,11 +3,11 @@
 //go:build linux && !go1.21
 
 // Copyright (C) 2021, 2022 The Go Authors. All rights reserved.
-// Copyright (C) 2024 SUSE LLC. All rights reserved.
+// Copyright (C) 2024-2025 SUSE LLC. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package securejoin
+package gocompat
 
 import (
 	"sync"
@@ -18,7 +18,7 @@ import (
 // borrowed directly from the stdlib, and a few are modified to be "obviously
 // correct" without needing to copy too many other helpers.
 
-// clearSlice is equivalent to the builtin clear from Go 1.21.
+// clearSlice is equivalent to Go 1.21's builtin clear.
 // Copied from the Go 1.24 stdlib implementation.
 func clearSlice[S ~[]E, E any](slice S) {
 	var zero E
@@ -27,8 +27,9 @@ func clearSlice[S ~[]E, E any](slice S) {
 	}
 }
 
+// slicesIndexFunc is equivalent to Go 1.21's slices.IndexFunc.
 // Copied from the Go 1.24 stdlib implementation.
-func slices_IndexFunc[S ~[]E, E any](s S, f func(E) bool) int { //nolint:revive // name is meant to mirror stdlib
+func slicesIndexFunc[S ~[]E, E any](s S, f func(E) bool) int {
 	for i := range s {
 		if f(s[i]) {
 			return i
@@ -37,9 +38,10 @@ func slices_IndexFunc[S ~[]E, E any](s S, f func(E) bool) int { //nolint:revive 
 	return -1
 }
 
+// SlicesDeleteFunc is equivalent to Go 1.21's slices.DeleteFunc.
 // Copied from the Go 1.24 stdlib implementation.
-func slices_DeleteFunc[S ~[]E, E any](s S, del func(E) bool) S { //nolint:revive // name is meant to mirror stdlib
-	i := slices_IndexFunc(s, del)
+func SlicesDeleteFunc[S ~[]E, E any](s S, del func(E) bool) S {
+	i := slicesIndexFunc(s, del)
 	if i == -1 {
 		return s
 	}
@@ -54,14 +56,16 @@ func slices_DeleteFunc[S ~[]E, E any](s S, del func(E) bool) S { //nolint:revive
 	return s[:i]
 }
 
+// SlicesContains is equivalent to Go 1.21's slices.Contains.
 // Similar to the stdlib slices.Contains, except that we don't have
 // slices.Index so we need to use slices.IndexFunc for this non-Func helper.
-func slices_Contains[S ~[]E, E comparable](s S, v E) bool { //nolint:revive // name is meant to mirror stdlib
-	return slices_IndexFunc(s, func(e E) bool { return e == v }) >= 0
+func SlicesContains[S ~[]E, E comparable](s S, v E) bool {
+	return slicesIndexFunc(s, func(e E) bool { return e == v }) >= 0
 }
 
+// SlicesClone is equivalent to Go 1.21's slices.Clone.
 // Copied from the Go 1.24 stdlib implementation.
-func slices_Clone[S ~[]E, E any](s S) S { //nolint:revive // name is meant to mirror stdlib
+func SlicesClone[S ~[]E, E any](s S) S {
 	// Preserve nil in case it matters.
 	if s == nil {
 		return nil
@@ -69,8 +73,9 @@ func slices_Clone[S ~[]E, E any](s S) S { //nolint:revive // name is meant to mi
 	return append(S([]E{}), s...)
 }
 
+// SyncOnceValue is equivalent to Go 1.21's sync.OnceValue.
 // Copied from the Go 1.24 stdlib implementation.
-func sync_OnceValue[T any](f func() T) func() T { //nolint:revive // name is meant to mirror stdlib
+func SyncOnceValue[T any](f func() T) func() T {
 	var (
 		once   sync.Once
 		valid  bool

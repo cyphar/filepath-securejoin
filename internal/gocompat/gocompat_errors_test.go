@@ -6,7 +6,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package securejoin
+package gocompat
 
 import (
 	"errors"
@@ -20,7 +20,7 @@ func TestGoCompatErrorWrap(t *testing.T) {
 	baseErr := errors.New("base error")
 	extraErr := errors.New("extra error")
 
-	err := wrapBaseError(baseErr, extraErr)
+	err := WrapBaseError(baseErr, extraErr)
 
 	require.Error(t, err)
 	assert.ErrorIs(t, err, baseErr, "wrapped error should contain base error")   //nolint:testifylint // we are testing error behaviour directly

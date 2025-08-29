@@ -23,6 +23,8 @@ import (
 	"strings"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
 // procfsLookupInRoot is a stripped down version of completeLookupInRoot,
@@ -88,7 +90,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 			// multiple %w verbs for this wrapping. For now we need to use a
 			// compatibility shim for older Go versions.
 			// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-			return nil, wrapBaseError(err, errUnsafeProcfs)
+			return nil, gocompat.WrapBaseError(err, errUnsafeProcfs)
 		}
 		return handle, nil
 	}

@@ -19,6 +19,8 @@ import (
 	"strconv"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
 func fstat(f *os.File) (unix.Stat_t, error) {
@@ -71,7 +73,7 @@ func verifyProcRoot(procRoot *os.File) error {
 	return nil
 }
 
-var hasNewMountAPI = sync_OnceValue(func() bool {
+var hasNewMountAPI = gocompat.SyncOnceValue(func() bool {
 	// All of the pieces of the new mount API we use (fsopen, fsconfig,
 	// fsmount, open_tree) were added together in Linux 5.1[1,2], so we can
 	// just check for one of the syscalls and the others should also be
@@ -127,7 +129,7 @@ type procfsFeatures struct {
 	hasSubsetPid bool
 }
 
-var getProcfsFeatures = sync_OnceValue(func() procfsFeatures {
+var getProcfsFeatures = gocompat.SyncOnceValue(func() procfsFeatures {
 	if !hasNewMountAPI() {
 		return procfsFeatures{}
 	}
@@ -242,7 +244,7 @@ func getProcRoot(subset bool) (*os.File, error) {
 	return procRoot, err
 }
 
-var hasProcThreadSelf = sync_OnceValue(func() bool {
+var hasProcThreadSelf = gocompat.SyncOnceValue(func() bool {
 	return unix.Access("/proc/thread-self/", unix.F_OK) == nil
 })
 
@@ -269,7 +271,7 @@ func procOpen(procRoot *os.File, subpath string) (*os.File, error) {
 		// multiple %w verbs for this wrapping. For now we need to use a
 		// compatibility shim for older Go versions.
 		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-		return nil, wrapBaseError(err, errUnsafeProcfs)
+		return nil, gocompat.WrapBaseError(err, errUnsafeProcfs)
 	}
 	return handle, nil
 }
@@ -396,7 +398,7 @@ const (
 	wantStatxMntMask = _STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
 )
 
-var hasStatxMountID = sync_OnceValue(func() bool {
+var hasStatxMountID = gocompat.SyncOnceValue(func() bool {
 	var stx unix.Statx_t
 	err := unix.Statx(-int(unix.EBADF), "/", 0, wantStatxMntMask, &stx)
 	return err == nil && stx.Mask&wantStatxMntMask != 0
@@ -420,7 +422,7 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 		// multiple %w verbs for this wrapping. For now we need to use a
 		// compatibility shim for older Go versions.
 		// err = fmt.Errorf("%w: could not get mount id: %w", errUnsafeProcfs, err)
-		err = wrapBaseError(fmt.Errorf("could not get mount id: %w", err), errUnsafeProcfs)
+		err = gocompat.WrapBaseError(fmt.Errorf("could not get mount id: %w", err), errUnsafeProcfs)
 	}
 	if err != nil {
 		return 0, &os.PathError{Op: "statx(STATX_MNT_ID_...)", Path: fullPath, Err: err}

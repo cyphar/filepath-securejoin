@@ -32,3 +32,8 @@ func SlicesClone[S ~[]E, E any](slice S) S {
 func SyncOnceValue[T any](f func() T) func() T {
 	return sync.OnceValue(f)
 }
+
+// SyncOnceValues is equivalent to Go 1.21's sync.OnceValues.
+func SyncOnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) {
+	return sync.OnceValues(f)
+}

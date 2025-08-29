@@ -74,30 +74,66 @@ func SlicesClone[S ~[]E, E any](s S) S {
 }
 
 // SyncOnceValue is equivalent to Go 1.21's sync.OnceValue.
-// Copied from the Go 1.24 stdlib implementation.
+// Copied from the Go 1.25 stdlib implementation.
 func SyncOnceValue[T any](f func() T) func() T {
-	var (
+	// Use a struct so that there's a single heap allocation.
+	d := struct {
+		f      func() T
 		once   sync.Once
 		valid  bool
 		p      any
 		result T
-	)
-	g := func() {
-		defer func() {
-			p = recover()
-			if !valid {
-				panic(p)
-			}
-		}()
-		result = f()
-		f = nil
-		valid = true
+	}{
+		f: f,
 	}
 	return func() T {
-		once.Do(g)
-		if !valid {
-			panic(p)
+		d.once.Do(func() {
+			defer func() {
+				d.f = nil
+				d.p = recover()
+				if !d.valid {
+					panic(d.p)
+				}
+			}()
+			d.result = d.f()
+			d.valid = true
+		})
+		if !d.valid {
+			panic(d.p)
 		}
-		return result
+		return d.result
+	}
+}
+
+// SyncOnceValues is equivalent to Go 1.21's sync.OnceValues.
+// Copied from the Go 1.25 stdlib implementation.
+func SyncOnceValues[T1, T2 any](f func() (T1, T2)) func() (T1, T2) {
+	// Use a struct so that there's a single heap allocation.
+	d := struct {
+		f     func() (T1, T2)
+		once  sync.Once
+		valid bool
+		p     any
+		r1    T1
+		r2    T2
+	}{
+		f: f,
+	}
+	return func() (T1, T2) {
+		d.once.Do(func() {
+			defer func() {
+				d.f = nil
+				d.p = recover()
+				if !d.valid {
+					panic(d.p)
+				}
+			}()
+			d.r1, d.r2 = d.f()
+			d.valid = true
+		})
+		if !d.valid {
+			panic(d.p)
+		}
+		return d.r1, d.r2
 	}
 }

@@ -119,6 +119,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   and so it seems prudent to avoid it. This mirrors [a similar change made to
   libpathrs][libpathrs-pr204].
 
+### Fixed ###
+- RHEL 8 kernels have backports of `fsopen(2)` but in some testing we've found
+  that it has very bad (and very difficult to debug) performance issues, and so
+  we will explicitly refuse to use `fsopen(2)` if the running kernel version is
+  pre-5.2 and will instead fallback to `open("/proc")`.
+
 [CVE-2024-21626]: https://github.com/opencontainers/runc/security/advisories/GHSA-xr7r-f8xq-vfvv
 [libpathrs]: https://github.com/cyphar/libpathrs
 [libpathrs-pr204]: https://github.com/cyphar/libpathrs/pull/204

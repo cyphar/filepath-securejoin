@@ -75,6 +75,15 @@ func fstatatFile(dir *os.File, path string, flags int) (unix.Stat_t, error) {
 	return stat, nil
 }
 
+func faccessatFile(dir *os.File, path string, mode uint32, flags int) error {
+	dirFd, fullPath := prepareAt(dir, path)
+	err := unix.Faccessat(dirFd, path, mode, flags)
+	if err != nil {
+		err = &os.PathError{Op: "faccessat", Path: fullPath, Err: err}
+	}
+	return err
+}
+
 func readlinkatFile(dir *os.File, path string) (string, error) {
 	dirFd, fullPath := prepareAt(dir, path)
 	size := 4096

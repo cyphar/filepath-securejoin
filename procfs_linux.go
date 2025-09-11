@@ -315,7 +315,7 @@ func procThreadSelf(procRoot *os.File, subpath string) (_ *os.File, _ ProcThread
 	if !hasProcThreadSelf() || hookForceProcSelfTask() {
 		/// Pre-3.17 kernels don't have /proc/thread-self, so do it manually.
 		threadSelf = "self/task/" + strconv.Itoa(unix.Gettid()) + "/"
-		if _, err := fstatatFile(procRoot, threadSelf, unix.AT_SYMLINK_NOFOLLOW); err != nil || hookForceProcSelf() {
+		if err := faccessatFile(procRoot, threadSelf, unix.F_OK, unix.AT_SYMLINK_NOFOLLOW); err != nil || hookForceProcSelf() {
 			// In this case, we running in a pid namespace that doesn't match
 			// the /proc mount we have. This can happen inside runc.
 			//

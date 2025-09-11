@@ -14,6 +14,7 @@ package securejoin
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"strconv"
@@ -547,5 +548,5 @@ var (
 	hookForceProcSelf     = hookDummy
 )
 
-func hookDummy() bool               { return false }
-func hookDummyFile(_ *os.File) bool { return false }
+func hookDummy() bool                { return false }
+func hookDummyFile(_ io.Closer) bool { return false }

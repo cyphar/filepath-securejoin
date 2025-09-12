@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
@@ -121,11 +122,11 @@ var hasStatxMountID = gocompat.SyncOnceValue(func() bool {
 	return err == nil && stx.Mask&wantStatxMntMask != 0
 })
 
-// GetMountID gets the mount identifier associated with the fd and path
+// getMountID gets the mount identifier associated with the fd and path
 // combination. It is effectively a wrapper around fetching
 // STATX_MNT_ID{,_UNIQUE} with unix.Statx, but with a fallback to 0 if the
 // kernel doesn't support the feature.
-func GetMountID(dir Fd, path string) (uint64, error) {
+func getMountID(dir Fd, path string) (uint64, error) {
 	// If we don't have statx(STATX_MNT_ID*) support, we can't do anything.
 	if !hasStatxMountID() {
 		return 0, nil
@@ -145,4 +146,28 @@ func GetMountID(dir Fd, path string) (uint64, error) {
 	}
 	runtime.KeepAlive(dir)
 	return stx.Mnt_id, nil
+}
+
+// CheckSubpathOvermount checks if the dirfd and path combination is on the
+// same mount as the given root.
+func CheckSubpathOvermount(root, dir Fd, path string) error {
+	// Get the mntID of our procfs handle.
+	expectedMountID, err := getMountID(root, "")
+	if err != nil {
+		return fmt.Errorf("get root mount id: %w", err)
+	}
+	// Get the mntID of the target magic-link.
+	gotMountID, err := getMountID(dir, path)
+	if err != nil {
+		return fmt.Errorf("get subpath mount id: %w", err)
+	}
+	// As long as the directory mount is alive, even with wrapping mount IDs,
+	// we would expect to see a different mount ID here. (Of course, if we're
+	// using unsafeHostProcRoot() then an attaker could change this after we
+	// did this check.)
+	if expectedMountID != gotMountID {
+		return fmt.Errorf("%w: subpath %s/%s has an overmount obscuring the real path (mount ids do not match %d != %d)",
+			internal.ErrOvermount, dir.Name(), path, expectedMountID, gotMountID)
+	}
+	return nil
 }

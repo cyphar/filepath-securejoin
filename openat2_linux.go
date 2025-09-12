@@ -21,6 +21,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cyphar/filepath-securejoin/internal/fd"
+	"github.com/cyphar/filepath-securejoin/procfs"
 )
 
 func openat2(dir fd.Fd, path string, how *unix.OpenHow) (*os.File, error) {
@@ -30,7 +31,7 @@ func openat2(dir fd.Fd, path string, how *unix.OpenHow) (*os.File, error) {
 	}
 	// If we are using RESOLVE_IN_ROOT, the name we generated may be wrong.
 	if how.Resolve&unix.RESOLVE_IN_ROOT == unix.RESOLVE_IN_ROOT {
-		if actualPath, err := procSelfFdReadlink(file); err == nil {
+		if actualPath, err := procfs.ProcSelfFdReadlink(file); err == nil {
 			// TODO: Ideally we would not need to dup the fd, but you cannot
 			//       easily just swap an *os.File with one from the same fd
 			//       (the GC will close the old one, and you cannot clear the

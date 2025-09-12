@@ -26,6 +26,7 @@ import (
 	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/procfs"
 )
 
 type partialLookupFunc func(root fd.Fd, unsafePath string) (*os.File, string, error)
@@ -61,7 +62,7 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 	assert.Equal(t, expected.remainingPath, remainingPath, "remaining path")
 
 	// Check the handle path.
-	gotPath, err := ProcSelfFdReadlink(handle)
+	gotPath, err := procfs.ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expected.handlePath, gotPath, "real handle path")
 	// Make sure the handle matches the readlink path.
@@ -382,7 +383,7 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir fd.Fd, unsaf
 
 		// Get the "proper" name from ProcSelfFdReadlink.
 		m.pauseCh <- struct{}{}
-		realPath, err = ProcSelfFdReadlink(handle)
+		realPath, err = procfs.ProcSelfFdReadlink(handle)
 		<-m.pauseCh
 		require.NoError(t, err, "get real path of returned handle")
 

@@ -23,6 +23,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 )
 
 func requireRoot(t *testing.T) {
@@ -95,7 +97,7 @@ func hasRenameExchange() bool {
 	return !errors.Is(err, unix.ENOSYS)
 }
 
-func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir *os.File, pathA, pathB string) {
+func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir fd.Fd, pathA, pathB string) {
 	for {
 		select {
 		case <-exitCh:

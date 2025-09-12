@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
@@ -51,7 +52,7 @@ func scopedLookupShouldRetry(how *unix.OpenHow, err error) bool {
 
 const scopedLookupMaxRetries = 10
 
-func openat2File(dir *os.File, path string, how *unix.OpenHow) (*os.File, error) {
+func openat2File(dir fd.Fd, path string, how *unix.OpenHow) (*os.File, error) {
 	dirFd, fullPath := prepareAt(dir, path)
 	// Make sure we always set O_CLOEXEC.
 	how.Flags |= unix.O_CLOEXEC
@@ -82,7 +83,7 @@ func openat2File(dir *os.File, path string, how *unix.OpenHow) (*os.File, error)
 	return nil, &os.PathError{Op: "openat2", Path: fullPath, Err: errPossibleAttack}
 }
 
-func lookupOpenat2(root *os.File, unsafePath string, partial bool) (*os.File, string, error) {
+func lookupOpenat2(root fd.Fd, unsafePath string, partial bool) (*os.File, string, error) {
 	if !partial {
 		file, err := openat2File(root, unsafePath, &unix.OpenHow{
 			Flags:   unix.O_PATH | unix.O_CLOEXEC,
@@ -96,7 +97,7 @@ func lookupOpenat2(root *os.File, unsafePath string, partial bool) (*os.File, st
 // partialLookupOpenat2 is an alternative implementation of
 // partialLookupInRoot, using openat2(RESOLVE_IN_ROOT) to more safely get a
 // handle to the deepest existing child of the requested path within the root.
-func partialLookupOpenat2(root *os.File, unsafePath string) (*os.File, string, error) {
+func partialLookupOpenat2(root fd.Fd, unsafePath string) (*os.File, string, error) {
 	// TODO: Implement this as a git-bisect-like binary search.
 
 	unsafePath = filepath.ToSlash(unsafePath) // noop

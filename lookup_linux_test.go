@@ -23,10 +23,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
-type partialLookupFunc func(root *os.File, unsafePath string) (*os.File, string, error)
+type partialLookupFunc func(root fd.Fd, unsafePath string) (*os.File, string, error)
 
 type lookupResult struct {
 	handlePath, remainingPath string
@@ -34,7 +35,7 @@ type lookupResult struct {
 	fileType                  uint32
 }
 
-func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir *os.File, unsafePath string, expected lookupResult) {
+func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir fd.Fd, unsafePath string, expected lookupResult) {
 	handle, remainingPath, err := partialLookupFn(rootDir, unsafePath)
 	if handle != nil {
 		defer handle.Close() //nolint:errcheck // test code
@@ -366,7 +367,7 @@ func newRacingLookupMeta(pauseCh chan struct{}) *racingLookupMeta {
 	}
 }
 
-func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, unsafePath string, skipErrs []error, allowedResults []lookupResult) {
+func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir fd.Fd, unsafePath string, skipErrs []error, allowedResults []lookupResult) {
 	// Similar to checkPartialLookup, but with extra logic for
 	// handling the lookup stopping partly through the lookup.
 	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath)

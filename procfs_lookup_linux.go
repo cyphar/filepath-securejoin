@@ -24,6 +24,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
@@ -49,7 +50,7 @@ import (
 //
 // If the system supports openat2(), this is implemented using equivalent flags
 // (RESOLVE_BENEATH | RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS).
-func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, _ error) {
+func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ error) {
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 
 	// Make sure that an empty unsafe path still returns something sane, even

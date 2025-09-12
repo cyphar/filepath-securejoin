@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
@@ -166,11 +167,11 @@ func (s *symlinkStack) PopTopSymlink() (*os.File, string, bool) {
 // within the provided root (a-la RESOLVE_IN_ROOT) and opens the final existing
 // component of the requested path, returning a file handle to the final
 // existing component and a string containing the remaining path components.
-func partialLookupInRoot(root *os.File, unsafePath string) (*os.File, string, error) {
+func partialLookupInRoot(root fd.Fd, unsafePath string) (*os.File, string, error) {
 	return lookupInRoot(root, unsafePath, true)
 }
 
-func completeLookupInRoot(root *os.File, unsafePath string) (*os.File, error) {
+func completeLookupInRoot(root fd.Fd, unsafePath string) (*os.File, error) {
 	handle, remainingPath, err := lookupInRoot(root, unsafePath, false)
 	if remainingPath != "" && err == nil {
 		// should never happen
@@ -181,7 +182,7 @@ func completeLookupInRoot(root *os.File, unsafePath string) (*os.File, error) {
 	return handle, err
 }
 
-func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.File, _ string, _ error) {
+func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File, _ string, _ error) {
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 
 	// This is very similar to SecureJoin, except that we operate on the
@@ -197,7 +198,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 	// root is some magic-link like /proc/$pid/root, in which case we want to
 	// make sure when we do checkProcSelfFdPath that we are using the correct
 	// root path.
-	logicalRootPath, err := ProcSelfFdReadlink(root)
+	logicalRootPath, err := procSelfFdReadlink(root)
 	if err != nil {
 		return nil, "", fmt.Errorf("get real root path: %w", err)
 	}

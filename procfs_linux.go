@@ -22,11 +22,12 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cyphar/filepath-securejoin/internal/assert"
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 	"github.com/cyphar/filepath-securejoin/internal/kernelversion"
 )
 
-func fstat(f *os.File) (unix.Stat_t, error) {
+func fstat(f fd.Fd) (unix.Stat_t, error) {
 	var stat unix.Stat_t
 	if err := unix.Fstat(int(f.Fd()), &stat); err != nil {
 		return stat, &os.PathError{Op: "fstat", Path: f.Name(), Err: err}
@@ -34,7 +35,7 @@ func fstat(f *os.File) (unix.Stat_t, error) {
 	return stat, nil
 }
 
-func fstatfs(f *os.File) (unix.Statfs_t, error) {
+func fstatfs(f fd.Fd) (unix.Statfs_t, error) {
 	var statfs unix.Statfs_t
 	if err := unix.Fstatfs(int(f.Fd()), &statfs); err != nil {
 		return statfs, &os.PathError{Op: "fstatfs", Path: f.Name(), Err: err}
@@ -52,7 +53,7 @@ const (
 // verifyProcHandle checks that the handle is from a procfs filesystem.
 // Contrast this to [verifyProcRoot], which also verifies that the handle is
 // the root of a procfs mount.
-func verifyProcHandle(procHandle *os.File) error {
+func verifyProcHandle(procHandle fd.Fd) error {
 	if statfs, err := fstatfs(procHandle); err != nil {
 		return err
 	} else if statfs.Type != procSuperMagic {
@@ -64,7 +65,7 @@ func verifyProcHandle(procHandle *os.File) error {
 // verifyProcRoot verifies that the handle is the root of a procfs filesystem.
 // Contrast this to [verifyProcHandle], which only verifies if the handle is
 // some file on procfs (regardless of what file it is).
-func verifyProcRoot(procRoot *os.File) error {
+func verifyProcRoot(procRoot fd.Fd) error {
 	if err := verifyProcHandle(procRoot); err != nil {
 		return err
 	}
@@ -112,7 +113,7 @@ func fsopen(fsName string, flags int) (*os.File, error) {
 	return os.NewFile(uintptr(fd), "fscontext:"+fsName), nil
 }
 
-func fsmount(ctx *os.File, flags, mountAttrs int) (*os.File, error) {
+func fsmount(ctx fd.Fd, flags, mountAttrs int) (*os.File, error) {
 	// Make sure we always set O_CLOEXEC.
 	flags |= unix.FSMOUNT_CLOEXEC
 	fd, err := unix.Fsmount(int(ctx.Fd()), flags, mountAttrs)
@@ -183,7 +184,7 @@ func newPrivateProcMount(subset bool) (_ *ProcfsHandle, Err error) {
 	return newProcfsHandle(procRoot)
 }
 
-func openTree(dir *os.File, path string, flags uint) (*os.File, error) {
+func openTree(dir fd.Fd, path string, flags uint) (*os.File, error) {
 	dirFd, fullPath := prepareAt(dir, path)
 	// Make sure we always set O_CLOEXEC.
 	flags |= unix.OPEN_TREE_CLOEXEC
@@ -244,13 +245,13 @@ func unsafeHostProcRoot() (_ *ProcfsHandle, Err error) {
 // ProcfsHandle is a wrapper around an *os.File handle to "/proc", which can be
 // used to do further procfs-related operations in a safe way.
 type ProcfsHandle struct {
-	inner *os.File
+	inner fd.Fd
 	// TODO: When getting a subset=pid handle, cache it and make Close() a
 	//       no-op so that code can work with both setups without leaking
 	//       non-subset=pid handles.
 }
 
-func newProcfsHandle(procRoot *os.File) (*ProcfsHandle, error) {
+func newProcfsHandle(procRoot fd.Fd) (*ProcfsHandle, error) {
 	if err := verifyProcRoot(procRoot); err != nil {
 		// This is only used in methods that
 		_ = procRoot.Close()
@@ -499,7 +500,7 @@ var hasStatxMountID = gocompat.SyncOnceValue(func() bool {
 	return err == nil && stx.Mask&wantStatxMntMask != 0
 })
 
-func getMountID(dir *os.File, path string) (uint64, error) {
+func getMountID(dir fd.Fd, path string) (uint64, error) {
 	// If we don't have statx(STATX_MNT_ID*) support, we can't do anything.
 	if !hasStatxMountID() {
 		return 0, nil
@@ -526,7 +527,7 @@ func getMountID(dir *os.File, path string) (uint64, error) {
 	return stx.Mnt_id, nil
 }
 
-func checkSubpathOvermount(procRoot *os.File, dir *os.File, path string) error {
+func checkSubpathOvermount(procRoot fd.Fd, dir fd.Fd, path string) error {
 	// Get the mntID of our procfs handle.
 	expectedMountID, err := getMountID(procRoot, "")
 	if err != nil {
@@ -591,14 +592,18 @@ func rawProcSelfFdReadlink(fd int) (string, error) {
 	return procRoot.readlink(ProcThreadSelf, "fd/"+strconv.Itoa(fd))
 }
 
+func procSelfFdReadlink(fd fd.Fd) (string, error) {
+	linkname, err := rawProcSelfFdReadlink(int(fd.Fd()))
+	runtime.KeepAlive(fd)
+	return linkname, err
+}
+
 // ProcSelfFdReadlink gets the real path of the given file by looking at
 // readlink(/proc/thread-self/fd/$n).
 //
 // This is just a wrapper around [ProcfsHandle.Readlink].
 func ProcSelfFdReadlink(f *os.File) (string, error) {
-	linkname, err := rawProcSelfFdReadlink(int(f.Fd()))
-	runtime.KeepAlive(f)
-	return linkname, err
+	return procSelfFdReadlink(f)
 }
 
 var (
@@ -607,7 +612,7 @@ var (
 	errDeletedInode     = errors.New("cannot verify path of deleted inode")
 )
 
-func isDeadInode(file *os.File) error {
+func isDeadInode(file fd.Fd) error {
 	// If the nlink of a file drops to 0, there is an attacker deleting
 	// directories during our walk, which could result in weird /proc values.
 	// It's better to error out in this case.
@@ -625,11 +630,11 @@ func isDeadInode(file *os.File) error {
 	return nil
 }
 
-func checkProcSelfFdPath(path string, file *os.File) error {
+func checkProcSelfFdPath(path string, file fd.Fd) error {
 	if err := isDeadInode(file); err != nil {
 		return err
 	}
-	actualPath, err := ProcSelfFdReadlink(file)
+	actualPath, err := procSelfFdReadlink(file)
 	if err != nil {
 		return fmt.Errorf("get path of handle: %w", err)
 	}

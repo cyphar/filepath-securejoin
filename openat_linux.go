@@ -17,9 +17,11 @@ import (
 	"runtime"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 )
 
-func dupFile(f *os.File) (*os.File, error) {
+func dupFile(f fd.Fd) (*os.File, error) {
 	fd, err := unix.FcntlInt(f.Fd(), unix.F_DUPFD_CLOEXEC, 0)
 	if err != nil {
 		return nil, os.NewSyscallError("fcntl(F_DUPFD_CLOEXEC)", err)
@@ -33,7 +35,7 @@ func dupFile(f *os.File) (*os.File, error) {
 // *informational* string that describes a reasonable pathname for the given
 // *at(2) arguments. You must not use the full path for any actual filesystem
 // operations.
-func prepareAt(dir *os.File, path string) (dirFd int, unsafeUnmaskedPath string) {
+func prepareAt(dir fd.Fd, path string) (dirFd int, unsafeUnmaskedPath string) {
 	dirFd, dirPath := -int(unix.EBADF), "."
 	if dir != nil {
 		dirFd, dirPath = int(dir.Fd()), dir.Name()
@@ -49,7 +51,7 @@ func prepareAt(dir *os.File, path string) (dirFd int, unsafeUnmaskedPath string)
 	return dirFd, path
 }
 
-func openatFile(dir *os.File, path string, flags int, mode int) (*os.File, error) { //nolint:unparam // wrapper func
+func openatFile(dir fd.Fd, path string, flags int, mode int) (*os.File, error) { //nolint:unparam // wrapper func
 	dirFd, fullPath := prepareAt(dir, path)
 	// Make sure we always set O_CLOEXEC.
 	flags |= unix.O_CLOEXEC
@@ -65,7 +67,7 @@ func openatFile(dir *os.File, path string, flags int, mode int) (*os.File, error
 	return os.NewFile(uintptr(fd), fullPath), nil
 }
 
-func fstatatFile(dir *os.File, path string, flags int) (unix.Stat_t, error) {
+func fstatatFile(dir fd.Fd, path string, flags int) (unix.Stat_t, error) {
 	dirFd, fullPath := prepareAt(dir, path)
 	var stat unix.Stat_t
 	if err := unix.Fstatat(dirFd, path, &stat, flags); err != nil {
@@ -75,7 +77,7 @@ func fstatatFile(dir *os.File, path string, flags int) (unix.Stat_t, error) {
 	return stat, nil
 }
 
-func faccessatFile(dir *os.File, path string, mode uint32, flags int) error {
+func faccessatFile(dir fd.Fd, path string, mode uint32, flags int) error {
 	dirFd, fullPath := prepareAt(dir, path)
 	err := unix.Faccessat(dirFd, path, mode, flags)
 	if err != nil {
@@ -84,7 +86,7 @@ func faccessatFile(dir *os.File, path string, mode uint32, flags int) error {
 	return err
 }
 
-func readlinkatFile(dir *os.File, path string) (string, error) {
+func readlinkatFile(dir fd.Fd, path string) (string, error) {
 	dirFd, fullPath := prepareAt(dir, path)
 	size := 4096
 	for {

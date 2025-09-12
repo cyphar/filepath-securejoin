@@ -21,4 +21,10 @@ var (
 	// ErrPossibleBreakout indicates that during an operation we ended up in a
 	// state that could be a breakout but we detected it.
 	ErrPossibleBreakout = errors.New("possible breakout detected")
+
+	// ErrInvalidDirectory indicates an unlinked directory.
+	ErrInvalidDirectory = errors.New("wandered into deleted directory")
+
+	// ErrDeletedInode indicates an unlinked file (non-directory).
+	ErrDeletedInode = errors.New("cannot verify path of deleted inode")
 )

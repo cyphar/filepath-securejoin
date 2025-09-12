@@ -9,7 +9,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-package securejoin
+package procfs
 
 import (
 	"errors"
@@ -28,8 +28,8 @@ import (
 	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
-func newPrivateProcMountSubset() (*ProcfsHandle, error)   { return newPrivateProcMount(true) }
-func newPrivateProcMountUnmasked() (*ProcfsHandle, error) { return newPrivateProcMount(false) }
+func newPrivateProcMountSubset() (*Handle, error)   { return newPrivateProcMount(true) }
+func newPrivateProcMountUnmasked() (*Handle, error) { return newPrivateProcMount(false) }
 
 func doMount(t *testing.T, source, target, fsType string, flags uintptr) {
 	var sourcePath string
@@ -89,7 +89,7 @@ func setupMountNamespace(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func testProcThreadSelf(t *testing.T, procRoot *ProcfsHandle, subpath string, expectErr bool) {
+func testProcThreadSelf(t *testing.T, procRoot *Handle, subpath string, expectErr bool) {
 	handle, closer, err := procRoot.OpenThreadSelf(subpath)
 	if expectErr {
 		assert.ErrorIsf(t, err, errUnsafeProcfs, "should have detected /proc/thread-self/%s overmount", subpath)
@@ -99,7 +99,7 @@ func testProcThreadSelf(t *testing.T, procRoot *ProcfsHandle, subpath string, ex
 	}
 }
 
-type procRootFunc func() (*ProcfsHandle, error)
+type procRootFunc func() (*Handle, error)
 
 func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermounts bool) {
 	testForceProcThreadSelf(t, func(t *testing.T) {
@@ -168,14 +168,14 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		defer procExe.Close() //nolint:errcheck // test code
 
 		// no overmount
-		err = checkSubpathOvermount(procRoot.inner, procCwd, "")
+		err = CheckSubpathOvermount(procRoot.Inner, procCwd, "")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSubpathOvermount(procRoot.inner, procSelf, "cwd")
+		err = CheckSubpathOvermount(procRoot.Inner, procSelf, "cwd")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// basic overmount
-		err = checkSubpathOvermount(procRoot.inner, procExe, "")
+		err = CheckSubpathOvermount(procRoot.Inner, procExe, "")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = checkSubpathOvermount(procRoot.inner, procSelf, "exe")
+		err = CheckSubpathOvermount(procRoot.Inner, procSelf, "exe")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// fd no overmount
@@ -231,7 +231,7 @@ func TestProcOvermountSubdir_OpenProcRoot(t *testing.T) {
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
-		procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+		procRootFn := func() (*Handle, error) { return getProcRoot(true) }
 		testProcOvermountSubdir(t, procRootFn, !linux.HasNewMountAPI())
 	})
 }
@@ -251,7 +251,7 @@ func TestProcOvermountSubdir_getProcRootSubset_Mocked(t *testing.T) {
 	}
 	withWithoutOpenat2(t, true, func(t *testing.T) {
 		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
-			procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+			procRootFn := func() (*Handle, error) { return getProcRoot(true) }
 			testProcOvermountSubdir(t, procRootFn, expectOvermounts)
 		})
 	})
@@ -261,7 +261,7 @@ func TestProcOvermountSubdir_getProcRootSubset_Mocked(t *testing.T) {
 func isFsopenRoot(t *testing.T) bool {
 	procRoot, err := OpenUnsafeProcRoot() // !subset=pid
 	require.NoError(t, err)
-	return procRoot.inner.Name() == "fsmount:fscontext:proc"
+	return procRoot.Inner.Name() == "fsmount:fscontext:proc"
 }
 
 // Because of the introduction of protections against /proc overmounts,
@@ -536,7 +536,7 @@ func testProcOvermount(t *testing.T, procRootFn procRootFunc, privateProcMount b
 				}
 				if privateProcMount {
 					assert.NoError(t, err, "get proc handle should succeed")                                      //nolint:testifylint
-					assert.NoError(t, verifyProcRoot(procRoot.inner), "verify private proc mount should succeed") //nolint:testifylint
+					assert.NoError(t, verifyProcRoot(procRoot.Inner), "verify private proc mount should succeed") //nolint:testifylint
 				} else {
 					if !assert.ErrorIs(t, err, errUnsafeProcfs, "get proc handle should fail") { //nolint:testifylint
 						t.Logf("procRootFn() = %v, %v", procRoot, err)
@@ -574,7 +574,7 @@ func TestProcOvermount_newPrivateProcMountUnmasked(t *testing.T) {
 
 func TestProcOvermount_OpenProcRoot(t *testing.T) {
 	privateProcMount := canFsOpen() && !testingForcePrivateProcRootOpenTree(nil)
-	procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+	procRootFn := func() (*Handle, error) { return getProcRoot(true) }
 	testProcOvermount(t, procRootFn, privateProcMount)
 }
 
@@ -584,7 +584,7 @@ func TestProcOvermount_OpenProcRoot_Mocked(t *testing.T) {
 	}
 	testForceGetProcRoot(t, func(t *testing.T, _ bool) {
 		privateProcMount := canFsOpen() && !testingForcePrivateProcRootOpenTree(nil)
-		procRootFn := func() (*ProcfsHandle, error) { return getProcRoot(true) }
+		procRootFn := func() (*Handle, error) { return getProcRoot(true) }
 		testProcOvermount(t, procRootFn, privateProcMount)
 	})
 }
@@ -607,11 +607,11 @@ func TestProcSelfFdPath(t *testing.T) {
 		defer handle.Close() //nolint:errcheck // test code
 
 		// The check should fail if we expect the symlink path.
-		err = checkProcSelfFdPath(symPath, handle)
-		assert.ErrorIs(t, err, internal.ErrPossibleBreakout, "checkProcSelfFdPath should fail for wrong path") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+		err = CheckProcSelfFdPath(symPath, handle)
+		assert.ErrorIs(t, err, internal.ErrPossibleBreakout, "CheckProcSelfFdPath should fail for wrong path") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// The check should fail if we expect the symlink path.
-		err = checkProcSelfFdPath(filePath, handle)
+		err = CheckProcSelfFdPath(filePath, handle)
 		assert.NoError(t, err) //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
@@ -626,20 +626,20 @@ func TestProcSelfFdPath_DeadFile(t *testing.T) {
 		defer handle.Close() //nolint:errcheck // test code
 
 		// The path still exists.
-		err = checkProcSelfFdPath(fullPath, handle)
-		assert.NoError(t, err, "checkProcSelfFdPath should succeed with regular file") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+		err = CheckProcSelfFdPath(fullPath, handle)
+		assert.NoError(t, err, "CheckProcSelfFdPath should succeed with regular file") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// Delete the path.
 		err = os.Remove(fullPath)
 		require.NoError(t, err)
 
 		// The check should fail now.
-		err = checkProcSelfFdPath(fullPath, handle)
-		assert.ErrorIs(t, err, errDeletedInode, "checkProcSelfFdPath should fail after deletion") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+		err = CheckProcSelfFdPath(fullPath, handle)
+		assert.ErrorIs(t, err, internal.ErrDeletedInode, "CheckProcSelfFdPath should fail after deletion") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// The check should fail even if the expected path ends with " (deleted)".
-		err = checkProcSelfFdPath(fullPath+" (deleted)", handle)
-		assert.ErrorIs(t, err, errDeletedInode, "checkProcSelfFdPath should fail after deletion even with (deleted) suffix") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+		err = CheckProcSelfFdPath(fullPath+" (deleted)", handle)
+		assert.ErrorIs(t, err, internal.ErrDeletedInode, "CheckProcSelfFdPath should fail after deletion even with (deleted) suffix") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
 
@@ -656,20 +656,20 @@ func TestProcSelfFdPath_DeadDir(t *testing.T) {
 		defer handle.Close() //nolint:errcheck // test code
 
 		// The path still exists.
-		err = checkProcSelfFdPath(fullPath, handle)
-		assert.NoError(t, err, "checkProcSelfFdPath should succeed with regular directory") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+		err = CheckProcSelfFdPath(fullPath, handle)
+		assert.NoError(t, err, "CheckProcSelfFdPath should succeed with regular directory") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// Delete the path.
 		err = os.Remove(fullPath)
 		require.NoError(t, err)
 
 		// The check should fail now.
-		err = checkProcSelfFdPath(fullPath, handle)
-		assert.ErrorIs(t, err, errInvalidDirectory, "checkProcSelfFdPath should fail after deletion") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+		err = CheckProcSelfFdPath(fullPath, handle)
+		assert.ErrorIs(t, err, internal.ErrInvalidDirectory, "CheckProcSelfFdPath should fail after deletion") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// The check should fail even if the expected path ends with " (deleted)".
-		err = checkProcSelfFdPath(fullPath+" (deleted)", handle)
-		assert.ErrorIs(t, err, errInvalidDirectory, "checkProcSelfFdPath should fail after deletion even with (deleted) suffix") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+		err = CheckProcSelfFdPath(fullPath+" (deleted)", handle)
+		assert.ErrorIs(t, err, internal.ErrInvalidDirectory, "CheckProcSelfFdPath should fail after deletion even with (deleted) suffix") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }
 
@@ -729,7 +729,7 @@ func TestCachedProcRoot_Close(t *testing.T) {
 	_ = f.Close()
 
 	for i := 0; i < 4; i++ {
-		require.NoError(t, proc.Close(), "closing cached ProcfsHandle")
+		require.NoError(t, proc.Close(), "closing cached Handle")
 	}
 
 	f2, err := proc.OpenSelf(".")

@@ -12,10 +12,13 @@
 package fd
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal"
 )
 
 // DupWithName creates a new file descriptor referencing the same underlying
@@ -52,4 +55,24 @@ func Fstatfs(fd Fd) (unix.Statfs_t, error) {
 	}
 	runtime.KeepAlive(fd)
 	return statfs, nil
+}
+
+// IsDeadInode detects whether the file has been unlinked from a filesystem and
+// is thus a "dead inode" from the kernel's perspective.
+func IsDeadInode(file Fd) error {
+	// If the nlink of a file drops to 0, there is an attacker deleting
+	// directories during our walk, which could result in weird /proc values.
+	// It's better to error out in this case.
+	stat, err := Fstat(file)
+	if err != nil {
+		return fmt.Errorf("check for dead inode: %w", err)
+	}
+	if stat.Nlink == 0 {
+		err := internal.ErrDeletedInode
+		if stat.Mode&unix.S_IFMT == unix.S_IFDIR {
+			err = internal.ErrInvalidDirectory
+		}
+		return fmt.Errorf("%w %q", err, file.Name())
+	}
+	return nil
 }

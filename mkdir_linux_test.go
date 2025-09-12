@@ -24,7 +24,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
+	"github.com/cyphar/filepath-securejoin/internal/procfs"
 )
 
 type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode os.FileMode) error
@@ -53,7 +55,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	require.NoError(t, err)
 
 	// Now double-check that the handle is correct.
-	gotPath, err := ProcSelfFdReadlink(handle)
+	gotPath, err := procfs.ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expectedPath, gotPath, "wrong final path from MkdirAllHandle")
 	// Also check that the f.Name() is correct while we're at it (this is
@@ -477,9 +479,9 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // undersco
 			unsafePath  string
 			allowedErrs []error
 		}{
-			{"rm-top", "target", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errInvalidDirectory, unix.ENOENT}},
-			{"rm-existing", "target/a/b/c", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errInvalidDirectory, unix.ENOENT}},
-			{"rm-nonexisting", "target/a/b/c/d/e", "target/a/b/c/d/e/f/g/h/i/j/k", []error{errInvalidDirectory, unix.ENOENT}},
+			{"rm-top", "target", "target/a/b/c/d/e/f/g/h/i/j/k", []error{internal.ErrInvalidDirectory, unix.ENOENT}},
+			{"rm-existing", "target/a/b/c", "target/a/b/c/d/e/f/g/h/i/j/k", []error{internal.ErrInvalidDirectory, unix.ENOENT}},
+			{"rm-nonexisting", "target/a/b/c/d/e", "target/a/b/c/d/e/f/g/h/i/j/k", []error{internal.ErrInvalidDirectory, unix.ENOENT}},
 		} {
 			test := test // copy iterator
 			t.Run(test.rmPath, func(t *testing.T) {

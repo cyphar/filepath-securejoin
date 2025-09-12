@@ -17,6 +17,8 @@ import (
 	"strconv"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/procfs"
 )
 
 // OpenatInRoot is equivalent to [OpenInRoot], except that the root is provided
@@ -68,7 +70,7 @@ func OpenInRoot(root, unsafePath string) (*os.File, error) {
 //
 // [CVE-2019-19921]: https://github.com/advisories/GHSA-fh74-hm69-rqjw
 func Reopen(handle *os.File, flags int) (*os.File, error) {
-	procRoot, err := OpenProcRoot() // subset=pid
+	procRoot, err := procfs.OpenProcRoot() // subset=pid
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +96,7 @@ func Reopen(handle *os.File, flags int) (*os.File, error) {
 	// [1]: Linux commit ee2e3f50629f ("mount: fix mounting of detached mounts
 	// onto targets that reside on shared mounts").
 	fdStr := strconv.Itoa(int(handle.Fd()))
-	if err := checkSubpathOvermount(procRoot.inner, procFdDir, fdStr); err != nil {
+	if err := procfs.CheckSubpathOvermount(procRoot.Inner, procFdDir, fdStr); err != nil {
 		return nil, fmt.Errorf("check safety of /proc/thread-self/fd/%s magiclink: %w", fdStr, err)
 	}
 

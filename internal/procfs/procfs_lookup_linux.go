@@ -13,7 +13,7 @@
 // <https://github.com/opensuse/libpathrs/blob/v0.1.3/src/resolvers/procfs.rs>.
 // As we only need O_PATH|O_NOFOLLOW support, this is not too much to port.
 
-package securejoin
+package procfs
 
 import (
 	"fmt"
@@ -78,13 +78,9 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 		//       symlink are generated dynamically), but it doesn't use
 		//       nd_jump_link() so RESOLVE_NO_MAGICLINKS allows it.
 		//
-		// NOTE: We MUST NOT use RESOLVE_IN_ROOT here, as openat2File uses
-		//       ProcSelfFdReadlink to clean up the returned f.Name() if we use
-		//       RESOLVE_IN_ROOT (which would lead to an infinite recursion).
-		//
 		// TODO: It would be nice to have RESOLVE_NO_DOTDOT, purely for
 		//       self-consistency with the backup O_PATH resolver.
-		handle, err := openat2(procRoot, unsafePath, &unix.OpenHow{
+		handle, err := fd.Openat2(procRoot, unsafePath, &unix.OpenHow{
 			Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_CLOEXEC,
 			Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_XDEV | unix.RESOLVE_NO_MAGICLINKS,
 		})
@@ -167,7 +163,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 			_ = nextDir.Close()
 			return nil, fmt.Errorf("check %q component is on procfs: %w", part, err)
 		}
-		if err := checkSubpathOvermount(procRoot, nextDir, ""); err != nil {
+		if err := CheckSubpathOvermount(procRoot, nextDir, ""); err != nil {
 			_ = nextDir.Close()
 			return nil, fmt.Errorf("check %q component is not overmounted: %w", part, err)
 		}
@@ -194,7 +190,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 				}
 
 				linksWalked++
-				if linksWalked > maxSymlinkLimit {
+				if linksWalked > internal.MaxSymlinkLimit {
 					return nil, &os.PathError{Op: "securejoin.procfsLookupInRoot", Path: "/proc/" + unsafePath, Err: unix.ELOOP}
 				}
 
@@ -218,7 +214,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 	if err := verifyProcHandle(currentDir); err != nil {
 		return nil, fmt.Errorf("check final handle is on procfs: %w", err)
 	}
-	if err := checkSubpathOvermount(procRoot, currentDir, ""); err != nil {
+	if err := CheckSubpathOvermount(procRoot, currentDir, ""); err != nil {
 		return nil, fmt.Errorf("check final handle is not overmounted: %w", err)
 	}
 	return currentDir, nil

@@ -21,9 +21,11 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 	"github.com/cyphar/filepath-securejoin/internal/linux"
+	"github.com/cyphar/filepath-securejoin/internal/procfs"
 )
 
 type symlinkStackEntry struct {
@@ -197,9 +199,9 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 
 	// Get the "actual" root path from /proc/self/fd. This is necessary if the
 	// root is some magic-link like /proc/$pid/root, in which case we want to
-	// make sure when we do checkProcSelfFdPath that we are using the correct
-	// root path.
-	logicalRootPath, err := procSelfFdReadlink(root)
+	// make sure when we do procfs.CheckProcSelfFdPath that we are using the
+	// correct root path.
+	logicalRootPath, err := procfs.ProcSelfFdReadlink(root)
 	if err != nil {
 		return nil, "", fmt.Errorf("get real root path: %w", err)
 	}
@@ -302,7 +304,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 				}
 
 				linksWalked++
-				if linksWalked > maxSymlinkLimit {
+				if linksWalked > internal.MaxSymlinkLimit {
 					return nil, "", &os.PathError{Op: "securejoin.lookupInRoot", Path: logicalRootPath + "/" + unsafePath, Err: unix.ELOOP}
 				}
 
@@ -344,12 +346,12 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 				// rename or mount on the system.
 				if part == ".." {
 					// Make sure the root hasn't moved.
-					if err := checkProcSelfFdPath(logicalRootPath, root); err != nil {
+					if err := procfs.CheckProcSelfFdPath(logicalRootPath, root); err != nil {
 						return nil, "", fmt.Errorf("root path moved during lookup: %w", err)
 					}
 					// Make sure the path is what we expect.
 					fullPath := logicalRootPath + nextPath
-					if err := checkProcSelfFdPath(fullPath, currentDir); err != nil {
+					if err := procfs.CheckProcSelfFdPath(fullPath, currentDir); err != nil {
 						return nil, "", fmt.Errorf("walking into %q had unexpected result: %w", part, err)
 					}
 				}

@@ -97,9 +97,9 @@ jobs:
       - name: unit tests
         run: |
           if (Test-Path 'env:GOCOVERDIR') {
-            go test -v -cover ./... -args '-test.gocoverdir' "$env:GOCOVERDIR"
+            go test -v -cover -coverpkg=./... ./... -args '-test.gocoverdir' "$env:GOCOVERDIR"
           } else {
-            go test -v -cover -coverprofile codecov-coverage.txt ./...
+            go test -v -cover -coverpkg=./... -coverprofile codecov-coverage.txt ./...
           }
       - name: upload coverage artefact
         # We can only use -test.gocoverdir for Go >= 1.20.
@@ -153,16 +153,16 @@ jobs:
       - name: go test
         run: |-
           if [ -n "${GOCOVERDIR:-}" ]; then
-            go test -v -timeout=30m -cover ./... -args -test.gocoverdir="$GOCOVERDIR"
+            go test -v -timeout=30m -cover -coverpkg=./... ./... -args -test.gocoverdir="$GOCOVERDIR"
           else
-            go test -v -timeout=30m -cover -coverprofile codecov-coverage.txt ./...
+            go test -v -timeout=30m -cover -coverpkg=./... -coverprofile codecov-coverage.txt ./...
           fi
       - name: sudo go test
         run: |-
           if [ -n "${GOCOVERDIR:-}" ]; then
-            sudo go test -v -timeout=30m -cover ./... -args -test.gocoverdir="$GOCOVERDIR"
+            sudo go test -v -timeout=30m -cover -coverpkg=./... ./... -args -test.gocoverdir="$GOCOVERDIR"
           else
-            sudo go test -v -timeout=30m -cover -coverprofile codecov-coverage-sudo.txt ./...
+            sudo go test -v -timeout=30m -cover -coverpkg=./... -coverprofile codecov-coverage-sudo.txt ./...
           fi
       - name: upload coverage artefact
         # We can only use -test.gocoverdir for Go >= 1.20.

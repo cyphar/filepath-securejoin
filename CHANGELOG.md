@@ -92,13 +92,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   implement this in `filepath-securejoin` ([libpathrs][] supports all of this,
   of course).
 
-### Changed ###
-- The procfs root file descriptor is no longer cached for the lifetime of the
-  process. This kind of global file descriptor caching has caused security
-  issues in container runtimes before (see [CVE-2024-21626][] for an example),
-  and so it seems prudent to avoid it. This mirrors [a similar change made to
-  libpathrs][libpathrs-pr204].
-
 ### Fixed ###
 - RHEL 8 kernels have backports of `fsopen(2)` but in some testing we've found
   that it has very bad (and very difficult to debug) performance issues, and so
@@ -107,7 +100,6 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 [CVE-2024-21626]: https://github.com/opencontainers/runc/security/advisories/GHSA-xr7r-f8xq-vfvv
 [libpathrs]: https://github.com/cyphar/libpathrs
-[libpathrs-pr204]: https://github.com/cyphar/libpathrs/pull/204
 [statx.2]: https://www.man7.org/linux/man-pages/man2/statx.2.html
 
 ## [0.4.1] - 2025-01-28 ##

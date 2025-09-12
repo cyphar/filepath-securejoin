@@ -717,3 +717,22 @@ func TestProcfsDummyHooks(t *testing.T) {
 	assert.False(t, hookDummy(), "hookDummy should always return false")
 	assert.False(t, hookDummyFile(nil), "hookDummyFile should always return false")
 }
+
+func TestCachedProcRoot_Close(t *testing.T) {
+	proc := getCachedProcRoot()
+	if proc == nil {
+		t.Skip("cannot get proc handle")
+	}
+
+	f, err := proc.OpenSelf(".")
+	require.NoError(t, err)
+	_ = f.Close()
+
+	for i := 0; i < 4; i++ {
+		require.NoError(t, proc.Close(), "closing cached ProcfsHandle")
+	}
+
+	f2, err := proc.OpenSelf(".")
+	require.NoError(t, err)
+	_ = f2.Close()
+}

@@ -173,9 +173,8 @@ func unsafeHostProcRoot() (_ *ProcfsHandle, Err error) {
 // used to do further procfs-related operations in a safe way.
 type ProcfsHandle struct {
 	inner fd.Fd
-	// TODO: When getting a subset=pid handle, cache it and make Close() a
-	//       no-op so that code can work with both setups without leaking
-	//       non-subset=pid handles.
+	// Does this handle have subset=pid set?
+	isSubset bool
 }
 
 func newProcfsHandle(procRoot fd.Fd) (*ProcfsHandle, error) {
@@ -184,11 +183,31 @@ func newProcfsHandle(procRoot fd.Fd) (*ProcfsHandle, error) {
 		_ = procRoot.Close()
 		return nil, err
 	}
-	return &ProcfsHandle{inner: procRoot}, nil
+	proc := &ProcfsHandle{inner: procRoot}
+	// With subset=pid we can be sure that /proc/uptime will not exist.
+	if err := fd.Faccessat(proc.inner, "uptime", unix.F_OK, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		proc.isSubset = errors.Is(err, os.ErrNotExist)
+	}
+	return proc, nil
 }
 
 // Close closes the underlying file for the ProcfsHandle.
 func (proc *ProcfsHandle) Close() error { return proc.inner.Close() }
+
+var getCachedProcRoot = gocompat.SyncOnceValue(func() *ProcfsHandle {
+	procRoot, err := getProcRoot(true)
+	if err != nil {
+		return nil // just don't cache if we see an error
+	}
+	if !procRoot.isSubset {
+		return nil // we only cache verified subset=pid handles
+	}
+
+	// Disarm (*ProcfsHandle).Close() to stop someone from accidentally closing
+	// the global handle.
+	procRoot.inner = fd.NopCloser(procRoot.inner)
+	return procRoot
+})
 
 // OpenProcRoot tries to open a "safer" handle to "/proc" (i.e., one with the
 // "subset=pid" mount option applied, available from Linux 5.8). Unless you
@@ -202,7 +221,12 @@ func (proc *ProcfsHandle) Close() error { return proc.inner.Close() }
 // function. If a [ProcRoot] subpath cannot be operated on with a safe "/proc"
 // handle, then [OpenUnsafeProcRoot] will be called internally and a temporary
 // unsafe handle will be used.
-func OpenProcRoot() (*ProcfsHandle, error) { return getProcRoot(true) }
+func OpenProcRoot() (*ProcfsHandle, error) {
+	if proc := getCachedProcRoot(); proc != nil {
+		return proc, nil
+	}
+	return getProcRoot(true)
+}
 
 // OpenUnsafeProcRoot opens a handle to "/proc" without any overmounts or
 // masked paths. You must be extremely careful to make sure this handle is

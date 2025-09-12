@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cyphar/filepath-securejoin/internal/fd"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
 func requireRoot(t *testing.T) {
@@ -40,12 +41,12 @@ func withWithoutOpenat2(t *testing.T, doAuto bool, testFn func(t *testing.T)) {
 	for _, useOpenat2 := range []bool{true, false} {
 		useOpenat2 := useOpenat2 // copy iterator
 		t.Run(fmt.Sprintf("openat2=%v", useOpenat2), func(t *testing.T) {
-			if useOpenat2 && !hasOpenat2() {
+			if useOpenat2 && !linux.HasOpenat2() {
 				t.Skip("no openat2 support")
 			}
-			origHasOpenat2 := hasOpenat2
-			hasOpenat2 = func() bool { return useOpenat2 }
-			defer func() { hasOpenat2 = origHasOpenat2 }()
+			origHasOpenat2 := linux.HasOpenat2
+			linux.HasOpenat2 = func() bool { return useOpenat2 }
+			defer func() { linux.HasOpenat2 = origHasOpenat2 }()
 
 			testFn(t)
 		})

@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
@@ -67,7 +68,7 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 	assert.Equal(t, gotPath, handle.Name(), "handle.Name() matching real handle path")
 
 	// Check the handle type.
-	unixStat, err := fstat(handle)
+	unixStat, err := fd.Fstat(handle)
 	require.NoError(t, err, "fstat handle")
 	assert.Equal(t, expected.fileType, unixStat.Mode&unix.S_IFMT, "handle S_IFMT type")
 }
@@ -385,7 +386,7 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir fd.Fd, unsaf
 		<-m.pauseCh
 		require.NoError(t, err, "get real path of returned handle")
 
-		unixStat, err = fstat(handle)
+		unixStat, err = fd.Fstat(handle)
 		require.NoError(t, err, "stat handle")
 
 		_ = handle.Close()
@@ -536,7 +537,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			)},
 		} {
 			test := test // copy iterator
-			test.skipErrs = append(test.skipErrs, errPossibleAttack, errPossibleBreakout)
+			test.skipErrs = append(test.skipErrs, internal.ErrPossibleAttack, internal.ErrPossibleBreakout)
 			t.Run(name, func(t *testing.T) {
 				root := createTree(t, tree...)
 

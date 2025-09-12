@@ -23,6 +23,7 @@ import (
 
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
 type symlinkStackEntry struct {
@@ -125,7 +126,7 @@ func (s *symlinkStack) push(dir *os.File, remainingPath, linkTarget string) erro
 		func(part string) bool { return part == "" || part == "." })
 
 	// Copy the directory so the caller doesn't close our copy.
-	dirCopy, err := dupFile(dir)
+	dirCopy, err := fd.Dup(dir)
 	if err != nil {
 		return err
 	}
@@ -190,7 +191,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 	// managed open, along with the remaining path components not opened.
 
 	// Try to use openat2 if possible.
-	if hasOpenat2() {
+	if linux.HasOpenat2() {
 		return lookupOpenat2(root, unsafePath, partial)
 	}
 
@@ -203,7 +204,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 		return nil, "", fmt.Errorf("get real root path: %w", err)
 	}
 
-	currentDir, err := dupFile(root)
+	currentDir, err := fd.Dup(root)
 	if err != nil {
 		return nil, "", fmt.Errorf("clone root fd: %w", err)
 	}
@@ -268,7 +269,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 				return nil, "", fmt.Errorf("walking into root with part %q failed: %w", part, err)
 			}
 			// Jump to root.
-			rootClone, err := dupFile(root)
+			rootClone, err := fd.Dup(root)
 			if err != nil {
 				return nil, "", fmt.Errorf("clone root fd: %w", err)
 			}
@@ -279,7 +280,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 		}
 
 		// Try to open the next component.
-		nextDir, err := openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		nextDir, err := fd.Openat(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		switch err {
 		case nil:
 			st, err := nextDir.Stat()
@@ -293,7 +294,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 				// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See
 				// Linux commit 65cfc6722361 ("readlinkat(), fchownat() and
 				// fstatat() with empty relative pathnames").
-				linkDest, err := readlinkatFile(nextDir, "")
+				linkDest, err := fd.Readlinkat(nextDir, "")
 				// We don't need the handle anymore.
 				_ = nextDir.Close()
 				if err != nil {
@@ -315,7 +316,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 				// Absolute symlinks reset any work we've already done.
 				if path.IsAbs(linkDest) {
 					// Jump to root.
-					rootClone, err := dupFile(root)
+					rootClone, err := fd.Dup(root)
 					if err != nil {
 						return nil, "", fmt.Errorf("clone root fd: %w", err)
 					}
@@ -379,7 +380,7 @@ func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File,
 	// context of openat2, a trailing slash and a trailing "/." are completely
 	// equivalent.
 	if strings.HasSuffix(unsafePath, "/") {
-		nextDir, err := openatFile(currentDir, ".", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		nextDir, err := fd.Openat(currentDir, ".", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
 			if !partial {
 				_ = currentDir.Close()

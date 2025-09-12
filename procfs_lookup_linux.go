@@ -24,8 +24,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
 // procfsLookupInRoot is a stripped down version of completeLookupInRoot,
@@ -65,7 +67,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 		return nil, err
 	}
 
-	if hasOpenat2() {
+	if linux.HasOpenat2() {
 		// We prefer being able to use RESOLVE_NO_XDEV if we can, to be
 		// absolutely sure we are operating on a clean /proc handle that
 		// doesn't have any cheeky overmounts that could trick us (including
@@ -82,7 +84,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 		//
 		// TODO: It would be nice to have RESOLVE_NO_DOTDOT, purely for
 		//       self-consistency with the backup O_PATH resolver.
-		handle, err := openat2File(procRoot, unsafePath, &unix.OpenHow{
+		handle, err := openat2(procRoot, unsafePath, &unix.OpenHow{
 			Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_CLOEXEC,
 			Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_XDEV | unix.RESOLVE_NO_MAGICLINKS,
 		})
@@ -99,10 +101,10 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 	// To mirror openat2(RESOLVE_BENEATH), we need to return an error if the
 	// path is absolute.
 	if path.IsAbs(unsafePath) {
-		return nil, fmt.Errorf("%w: cannot resolve absolute paths in procfs resolver", errPossibleBreakout)
+		return nil, fmt.Errorf("%w: cannot resolve absolute paths in procfs resolver", internal.ErrPossibleBreakout)
 	}
 
-	currentDir, err := dupFile(procRoot)
+	currentDir, err := fd.Dup(procRoot)
 	if err != nil {
 		return nil, fmt.Errorf("clone root fd: %w", err)
 	}
@@ -132,7 +134,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 		}
 		if part == ".." {
 			// not permitted
-			return nil, fmt.Errorf("%w: cannot walk into '..' in procfs resolver", errPossibleBreakout)
+			return nil, fmt.Errorf("%w: cannot walk into '..' in procfs resolver", internal.ErrPossibleBreakout)
 		}
 
 		// Apply the component lexically to the path we are building.
@@ -144,7 +146,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 		// opening the part and doing all of the other checks.
 		if nextPath == "/" {
 			// Jump to root.
-			rootClone, err := dupFile(procRoot)
+			rootClone, err := fd.Dup(procRoot)
 			if err != nil {
 				return nil, fmt.Errorf("clone root fd: %w", err)
 			}
@@ -155,7 +157,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 		}
 
 		// Try to open the next component.
-		nextDir, err := openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		nextDir, err := fd.Openat(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +186,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 				// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See
 				// Linux commit 65cfc6722361 ("readlinkat(), fchownat() and
 				// fstatat() with empty relative pathnames").
-				linkDest, err := readlinkatFile(nextDir, "")
+				linkDest, err := fd.Readlinkat(nextDir, "")
 				// We don't need the handle anymore.
 				_ = nextDir.Close()
 				if err != nil {
@@ -200,7 +202,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 				remainingPath = linkDest + "/" + remainingPath
 				// Absolute symlinks are probably magiclinks, we reject them.
 				if path.IsAbs(linkDest) {
-					return nil, fmt.Errorf("%w: cannot jump to / in procfs resolver -- possible magiclink", errPossibleBreakout)
+					return nil, fmt.Errorf("%w: cannot jump to / in procfs resolver -- possible magiclink", internal.ErrPossibleBreakout)
 				}
 				continue
 			}

@@ -21,27 +21,12 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/assert"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
-	"github.com/cyphar/filepath-securejoin/internal/kernelversion"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
-
-func fstat(f fd.Fd) (unix.Stat_t, error) {
-	var stat unix.Stat_t
-	if err := unix.Fstat(int(f.Fd()), &stat); err != nil {
-		return stat, &os.PathError{Op: "fstat", Path: f.Name(), Err: err}
-	}
-	return stat, nil
-}
-
-func fstatfs(f fd.Fd) (unix.Statfs_t, error) {
-	var statfs unix.Statfs_t
-	if err := unix.Fstatfs(int(f.Fd()), &statfs); err != nil {
-		return statfs, &os.PathError{Op: "fstatfs", Path: f.Name(), Err: err}
-	}
-	return statfs, nil
-}
 
 // The kernel guarantees that the root inode of a procfs mount has an
 // f_type of PROC_SUPER_MAGIC and st_ino of PROC_ROOT_INO.
@@ -54,7 +39,7 @@ const (
 // Contrast this to [verifyProcRoot], which also verifies that the handle is
 // the root of a procfs mount.
 func verifyProcHandle(procHandle fd.Fd) error {
-	if statfs, err := fstatfs(procHandle); err != nil {
+	if statfs, err := fd.Fstatfs(procHandle); err != nil {
 		return err
 	} else if statfs.Type != procSuperMagic {
 		return fmt.Errorf("%w: incorrect procfs root filesystem type 0x%x", errUnsafeProcfs, statfs.Type)
@@ -69,58 +54,12 @@ func verifyProcRoot(procRoot fd.Fd) error {
 	if err := verifyProcHandle(procRoot); err != nil {
 		return err
 	}
-	if stat, err := fstat(procRoot); err != nil {
+	if stat, err := fd.Fstat(procRoot); err != nil {
 		return err
 	} else if stat.Ino != procRootIno {
 		return fmt.Errorf("%w: incorrect procfs root inode number %d", errUnsafeProcfs, stat.Ino)
 	}
 	return nil
-}
-
-var hasNewMountAPI = gocompat.SyncOnceValue(func() bool {
-	// All of the pieces of the new mount API we use (fsopen, fsconfig,
-	// fsmount, open_tree) were added together in Linux 5.2[1,2], so we can
-	// just check for one of the syscalls and the others should also be
-	// available.
-	//
-	// Just try to use open_tree(2) to open a file without OPEN_TREE_CLONE.
-	// This is equivalent to openat(2), but tells us if open_tree is
-	// available (and thus all of the other basic new mount API syscalls).
-	// open_tree(2) is most light-weight syscall to test here.
-	//
-	// [1]: merge commit 400913252d09
-	// [2]: <https://lore.kernel.org/lkml/153754740781.17872.7869536526927736855.stgit@warthog.procyon.org.uk/>
-	fd, err := unix.OpenTree(-int(unix.EBADF), "/", unix.OPEN_TREE_CLOEXEC)
-	if err != nil {
-		return false
-	}
-	_ = unix.Close(fd)
-
-	// RHEL 8 has a backport of fsopen(2) that appears to have some very
-	// difficult to debug performance pathology. As such, it seems prudent to
-	// simply reject pre-5.2 kernels.
-	isNotBackport, _ := kernelversion.GreaterEqualThan(kernelversion.KernelVersion{5, 2})
-	return isNotBackport
-})
-
-func fsopen(fsName string, flags int) (*os.File, error) {
-	// Make sure we always set O_CLOEXEC.
-	flags |= unix.FSOPEN_CLOEXEC
-	fd, err := unix.Fsopen(fsName, flags)
-	if err != nil {
-		return nil, os.NewSyscallError("fsopen "+fsName, err)
-	}
-	return os.NewFile(uintptr(fd), "fscontext:"+fsName), nil
-}
-
-func fsmount(ctx fd.Fd, flags, mountAttrs int) (*os.File, error) {
-	// Make sure we always set O_CLOEXEC.
-	flags |= unix.FSMOUNT_CLOEXEC
-	fd, err := unix.Fsmount(int(ctx.Fd()), flags, mountAttrs)
-	if err != nil {
-		return nil, os.NewSyscallError("fsmount "+ctx.Name(), err)
-	}
-	return os.NewFile(uintptr(fd), "fsmount:"+ctx.Name()), nil
 }
 
 type procfsFeatures struct {
@@ -139,10 +78,10 @@ type procfsFeatures struct {
 }
 
 var getProcfsFeatures = gocompat.SyncOnceValue(func() procfsFeatures {
-	if !hasNewMountAPI() {
+	if !linux.HasNewMountAPI() {
 		return procfsFeatures{}
 	}
-	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
+	procfsCtx, err := fd.Fsopen("proc", unix.FSOPEN_CLOEXEC)
 	if err != nil {
 		return procfsFeatures{}
 	}
@@ -154,7 +93,7 @@ var getProcfsFeatures = gocompat.SyncOnceValue(func() procfsFeatures {
 })
 
 func newPrivateProcMount(subset bool) (_ *ProcfsHandle, Err error) {
-	procfsCtx, err := fsopen("proc", unix.FSOPEN_CLOEXEC)
+	procfsCtx, err := fd.Fsopen("proc", unix.FSOPEN_CLOEXEC)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +111,7 @@ func newPrivateProcMount(subset bool) (_ *ProcfsHandle, Err error) {
 		return nil, os.NewSyscallError("fsconfig create procfs", err)
 	}
 	// TODO: Output any information from the fscontext log to debug logs.
-	procRoot, err := fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
+	procRoot, err := fd.Fsmount(procfsCtx, unix.FSMOUNT_CLOEXEC, unix.MS_NODEV|unix.MS_NOEXEC|unix.MS_NOSUID)
 	if err != nil {
 		return nil, err
 	}
@@ -184,25 +123,13 @@ func newPrivateProcMount(subset bool) (_ *ProcfsHandle, Err error) {
 	return newProcfsHandle(procRoot)
 }
 
-func openTree(dir fd.Fd, path string, flags uint) (*os.File, error) {
-	dirFd, fullPath := prepareAt(dir, path)
-	// Make sure we always set O_CLOEXEC.
-	flags |= unix.OPEN_TREE_CLOEXEC
-	fd, err := unix.OpenTree(dirFd, path, flags)
-	if err != nil {
-		return nil, &os.PathError{Op: "open_tree", Path: fullPath, Err: err}
-	}
-	runtime.KeepAlive(dir)
-	return os.NewFile(uintptr(fd), fullPath), nil
-}
-
 func clonePrivateProcMount() (_ *ProcfsHandle, Err error) {
 	// Try to make a clone without using AT_RECURSIVE if we can. If this works,
 	// we can be sure there are no over-mounts and so if the root is valid then
 	// we're golden. Otherwise, we have to deal with over-mounts.
-	procRoot, err := openTree(nil, "/proc", unix.OPEN_TREE_CLONE)
+	procRoot, err := fd.OpenTree(nil, "/proc", unix.OPEN_TREE_CLONE)
 	if err != nil || hookForcePrivateProcRootOpenTreeAtRecursive(procRoot) {
-		procRoot, err = openTree(nil, "/proc", unix.OPEN_TREE_CLONE|unix.AT_RECURSIVE)
+		procRoot, err = fd.OpenTree(nil, "/proc", unix.OPEN_TREE_CLONE|unix.AT_RECURSIVE)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("creating a detached procfs clone: %w", err)
@@ -216,7 +143,7 @@ func clonePrivateProcMount() (_ *ProcfsHandle, Err error) {
 }
 
 func privateProcRoot(subset bool) (*ProcfsHandle, error) {
-	if !hasNewMountAPI() || hookForceGetProcRootUnsafe() {
+	if !linux.HasNewMountAPI() || hookForceGetProcRootUnsafe() {
 		return nil, fmt.Errorf("new mount api: %w", unix.ENOTSUP)
 	}
 	// Try to create a new procfs mount from scratch if we can. This ensures we
@@ -352,7 +279,7 @@ func (base procfsBase) prefix(proc *ProcfsHandle) (string, error) {
 			// Pre-3.17 kernels don't have /proc/thread-self, so do it
 			// manually.
 			threadSelf = "self/task/" + strconv.Itoa(unix.Gettid())
-			if err := faccessatFile(proc.inner, threadSelf, unix.F_OK, unix.AT_SYMLINK_NOFOLLOW); err != nil || hookForceProcSelf() {
+			if err := fd.Faccessat(proc.inner, threadSelf, unix.F_OK, unix.AT_SYMLINK_NOFOLLOW); err != nil || hookForceProcSelf() {
 				// In this case, we running in a pid namespace that doesn't
 				// match the /proc mount we have. This can happen inside runc.
 				//
@@ -481,62 +408,24 @@ func (proc *ProcfsHandle) OpenPid(pid int, subpath string) (*os.File, error) {
 	return proc.OpenRoot(strconv.Itoa(pid) + "/" + subpath)
 }
 
-const (
-	// STATX_MNT_ID_UNIQUE is provided in golang.org/x/sys@v0.20.0, but in order to
-	// avoid bumping the requirement for a single constant we can just define it
-	// ourselves.
-	_STATX_MNT_ID_UNIQUE = 0x4000 //nolint:revive // unix.* name
-
-	// We don't care which mount ID we get. The kernel will give us the unique
-	// one if it is supported. If the kernel doesn't support
-	// STATX_MNT_ID_UNIQUE, the bit is ignored and the returned request mask
-	// will only contain STATX_MNT_ID (if supported).
-	wantStatxMntMask = _STATX_MNT_ID_UNIQUE | unix.STATX_MNT_ID
-)
-
-var hasStatxMountID = gocompat.SyncOnceValue(func() bool {
-	var stx unix.Statx_t
-	err := unix.Statx(-int(unix.EBADF), "/", 0, wantStatxMntMask, &stx)
-	return err == nil && stx.Mask&wantStatxMntMask != 0
-})
-
-func getMountID(dir fd.Fd, path string) (uint64, error) {
-	// If we don't have statx(STATX_MNT_ID*) support, we can't do anything.
-	if !hasStatxMountID() {
-		return 0, nil
-	}
-
-	dirFd, fullPath := prepareAt(dir, path)
-
-	var stx unix.Statx_t
-	err := unix.Statx(dirFd, path, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW, wantStatxMntMask, &stx)
-	if stx.Mask&wantStatxMntMask == 0 {
-		// It's not a kernel limitation, for some reason we couldn't get a
-		// mount ID. Assume it's some kind of attack.
-		//
+func checkSubpathOvermount(procRoot fd.Fd, dir fd.Fd, path string) error {
+	// Get the mntID of our procfs handle.
+	expectedMountID, err := fd.GetMountID(procRoot, "")
+	if err != nil {
 		// TODO: Once we bump the minimum Go version to 1.20, we can use
 		// multiple %w verbs for this wrapping. For now we need to use a
 		// compatibility shim for older Go versions.
-		// err = fmt.Errorf("%w: could not get mount id: %w", errUnsafeProcfs, err)
-		err = gocompat.WrapBaseError(fmt.Errorf("could not get mount id: %w", err), errUnsafeProcfs)
-	}
-	if err != nil {
-		return 0, &os.PathError{Op: "statx(STATX_MNT_ID_...)", Path: fullPath, Err: err}
-	}
-	runtime.KeepAlive(dir)
-	return stx.Mnt_id, nil
-}
-
-func checkSubpathOvermount(procRoot fd.Fd, dir fd.Fd, path string) error {
-	// Get the mntID of our procfs handle.
-	expectedMountID, err := getMountID(procRoot, "")
-	if err != nil {
-		return err
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return gocompat.WrapBaseError(err, errUnsafeProcfs)
 	}
 	// Get the mntID of the target magic-link.
-	gotMountID, err := getMountID(dir, path)
+	gotMountID, err := fd.GetMountID(dir, path)
 	if err != nil {
-		return err
+		// TODO: Once we bump the minimum Go version to 1.20, we can use
+		// multiple %w verbs for this wrapping. For now we need to use a
+		// compatibility shim for older Go versions.
+		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
+		return gocompat.WrapBaseError(err, errUnsafeProcfs)
 	}
 	// As long as the directory mount is alive, even with wrapping mount IDs,
 	// we would expect to see a different mount ID here. (Of course, if we're
@@ -579,23 +468,18 @@ func (proc *ProcfsHandle) readlink(base procfsBase, subpath string) (string, err
 	// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See Linux commit
 	// 65cfc6722361 ("readlinkat(), fchownat() and fstatat() with empty
 	// relative pathnames").
-	return readlinkatFile(link, "")
+	return fd.Readlinkat(link, "")
 }
 
-func rawProcSelfFdReadlink(fd int) (string, error) {
+func procSelfFdReadlink(fd fd.Fd) (string, error) {
 	procRoot, err := OpenProcRoot() // subset=pid
 	if err != nil {
 		return "", err
 	}
 	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
 
-	return procRoot.readlink(ProcThreadSelf, "fd/"+strconv.Itoa(fd))
-}
-
-func procSelfFdReadlink(fd fd.Fd) (string, error) {
-	linkname, err := rawProcSelfFdReadlink(int(fd.Fd()))
-	runtime.KeepAlive(fd)
-	return linkname, err
+	fdPath := "fd/" + strconv.Itoa(int(fd.Fd()))
+	return procRoot.readlink(ProcThreadSelf, fdPath)
 }
 
 // ProcSelfFdReadlink gets the real path of the given file by looking at
@@ -607,7 +491,6 @@ func ProcSelfFdReadlink(f *os.File) (string, error) {
 }
 
 var (
-	errPossibleBreakout = errors.New("possible breakout detected")
 	errInvalidDirectory = errors.New("wandered into deleted directory")
 	errDeletedInode     = errors.New("cannot verify path of deleted inode")
 )
@@ -616,7 +499,7 @@ func isDeadInode(file fd.Fd) error {
 	// If the nlink of a file drops to 0, there is an attacker deleting
 	// directories during our walk, which could result in weird /proc values.
 	// It's better to error out in this case.
-	stat, err := fstat(file)
+	stat, err := fd.Fstat(file)
 	if err != nil {
 		return fmt.Errorf("check for dead inode: %w", err)
 	}
@@ -639,7 +522,7 @@ func checkProcSelfFdPath(path string, file fd.Fd) error {
 		return fmt.Errorf("get path of handle: %w", err)
 	}
 	if actualPath != path {
-		return fmt.Errorf("%w: handle path %q doesn't match expected path %q", errPossibleBreakout, actualPath, path)
+		return fmt.Errorf("%w: handle path %q doesn't match expected path %q", internal.ErrPossibleBreakout, actualPath, path)
 	}
 	return nil
 }

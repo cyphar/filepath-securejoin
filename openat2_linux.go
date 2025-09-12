@@ -16,76 +16,39 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"golang.org/x/sys/unix"
 
 	"github.com/cyphar/filepath-securejoin/internal/fd"
-	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 )
 
-var hasOpenat2 = gocompat.SyncOnceValue(func() bool {
-	fd, err := unix.Openat2(unix.AT_FDCWD, ".", &unix.OpenHow{
-		Flags:   unix.O_PATH | unix.O_CLOEXEC,
-		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_IN_ROOT,
-	})
+func openat2(dir fd.Fd, path string, how *unix.OpenHow) (*os.File, error) {
+	file, err := fd.Openat2(dir, path, how)
 	if err != nil {
-		return false
+		return nil, err
 	}
-	_ = unix.Close(fd)
-	return true
-})
-
-func scopedLookupShouldRetry(how *unix.OpenHow, err error) bool {
-	// RESOLVE_IN_ROOT (and RESOLVE_BENEATH) can return -EAGAIN if we resolve
-	// ".." while a mount or rename occurs anywhere on the system. This could
-	// happen spuriously, or as the result of an attacker trying to mess with
-	// us during lookup.
-	//
-	// In addition, scoped lookups have a "safety check" at the end of
-	// complete_walk which will return -EXDEV if the final path is not in the
-	// root.
-	return how.Resolve&(unix.RESOLVE_IN_ROOT|unix.RESOLVE_BENEATH) != 0 &&
-		(errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EXDEV))
-}
-
-const scopedLookupMaxRetries = 10
-
-func openat2File(dir fd.Fd, path string, how *unix.OpenHow) (*os.File, error) {
-	dirFd, fullPath := prepareAt(dir, path)
-	// Make sure we always set O_CLOEXEC.
-	how.Flags |= unix.O_CLOEXEC
-	var tries int
-	for tries < scopedLookupMaxRetries {
-		fd, err := unix.Openat2(dirFd, path, how)
-		if err != nil {
-			if scopedLookupShouldRetry(how, err) {
-				// We retry a couple of times to avoid the spurious errors, and
-				// if we are being attacked then returning -EAGAIN is the best
-				// we can do.
-				tries++
-				continue
+	// If we are using RESOLVE_IN_ROOT, the name we generated may be wrong.
+	if how.Resolve&unix.RESOLVE_IN_ROOT == unix.RESOLVE_IN_ROOT {
+		if actualPath, err := procSelfFdReadlink(file); err == nil {
+			// TODO: Ideally we would not need to dup the fd, but you cannot
+			//       easily just swap an *os.File with one from the same fd
+			//       (the GC will close the old one, and you cannot clear the
+			//       finaliser easily because it is associated with an internal
+			//       field of *os.File not *os.File itself).
+			newFile, err := fd.DupWithName(file, actualPath)
+			if err != nil {
+				return nil, err
 			}
-			return nil, &os.PathError{Op: "openat2", Path: fullPath, Err: err}
+			file = newFile
 		}
-		runtime.KeepAlive(dir)
-		// If we are using RESOLVE_IN_ROOT, the name we generated may be wrong.
-		// NOTE: The procRoot code MUST NOT use RESOLVE_IN_ROOT, otherwise
-		//       you'll get infinite recursion here.
-		if how.Resolve&unix.RESOLVE_IN_ROOT == unix.RESOLVE_IN_ROOT {
-			if actualPath, err := rawProcSelfFdReadlink(fd); err == nil {
-				fullPath = actualPath
-			}
-		}
-		return os.NewFile(uintptr(fd), fullPath), nil
 	}
-	return nil, &os.PathError{Op: "openat2", Path: fullPath, Err: errPossibleAttack}
+	return file, nil
 }
 
 func lookupOpenat2(root fd.Fd, unsafePath string, partial bool) (*os.File, string, error) {
 	if !partial {
-		file, err := openat2File(root, unsafePath, &unix.OpenHow{
+		file, err := openat2(root, unsafePath, &unix.OpenHow{
 			Flags:   unix.O_PATH | unix.O_CLOEXEC,
 			Resolve: unix.RESOLVE_IN_ROOT | unix.RESOLVE_NO_MAGICLINKS,
 		})
@@ -106,7 +69,7 @@ func partialLookupOpenat2(root fd.Fd, unsafePath string) (*os.File, string, erro
 	for endIdx > 0 {
 		subpath := unsafePath[:endIdx]
 
-		handle, err := openat2File(root, subpath, &unix.OpenHow{
+		handle, err := openat2(root, subpath, &unix.OpenHow{
 			Flags:   unix.O_PATH | unix.O_CLOEXEC,
 			Resolve: unix.RESOLVE_IN_ROOT | unix.RESOLVE_NO_MAGICLINKS,
 		})
@@ -129,7 +92,7 @@ func partialLookupOpenat2(root fd.Fd, unsafePath string) (*os.File, string, erro
 	// If we couldn't open anything, the whole subpath is missing. Return a
 	// copy of the root fd so that the caller doesn't close this one by
 	// accident.
-	rootClone, err := dupFile(root)
+	rootClone, err := fd.Dup(root)
 	if err != nil {
 		return nil, "", err
 	}

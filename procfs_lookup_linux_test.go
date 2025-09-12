@@ -18,6 +18,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cyphar/filepath-securejoin/internal"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
 func TestProcfsLookupInRoot(t *testing.T) {
@@ -32,8 +35,8 @@ func TestProcfsLookupInRoot(t *testing.T) {
 		// The main issue is that openat2 just returns -EXDEV and returning
 		// errUnsafeProcfs in all cases of the fallback resolver (for
 		// consistency) doesn't make much sense.
-		breakoutErr := errPossibleBreakout
-		if hasOpenat2() {
+		breakoutErr := internal.ErrPossibleBreakout
+		if linux.HasOpenat2() {
 			breakoutErr = errUnsafeProcfs
 		}
 

@@ -23,6 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 )
 
 type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode os.FileMode) error
@@ -85,7 +87,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 
 	remainingPath = filepath.Join("/", remainingPath)
 	for remainingPath != filepath.Dir(remainingPath) {
-		stat, err := fstatatFile(handle, "./"+remainingPath, unix.AT_SYMLINK_NOFOLLOW)
+		stat, err := fd.Fstatat(handle, "./"+remainingPath, unix.AT_SYMLINK_NOFOLLOW)
 		if expectedErr == nil {
 			// Check that the new components have the right mode.
 			if assert.NoErrorf(t, err, "unexpected error when checking new directory %q", remainingPath) {

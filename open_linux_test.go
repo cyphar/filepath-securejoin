@@ -20,6 +20,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 )
 
 type openInRootFunc func(root, unsafePath string) (*os.File, error)
@@ -114,7 +116,7 @@ func checkOpenInRoot(t *testing.T, openInRootFn openInRootFunc, root, unsafePath
 	assert.Equal(t, gotPath, handle.Name(), "handle.Name() matching real handle path")
 
 	// Check the handle type.
-	unixStat, err := fstat(handle)
+	unixStat, err := fd.Fstat(handle)
 	require.NoError(t, err, "fstat handle")
 	assert.Equal(t, expected.fileType, unixStat.Mode&unix.S_IFMT, "handle S_IFMT type")
 

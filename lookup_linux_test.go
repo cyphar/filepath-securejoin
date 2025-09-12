@@ -442,6 +442,9 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 }
 
 func TestPartialLookup_RacingRename(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping race tests in short mode")
+	}
 	if !hasRenameExchange() {
 		t.Skip("test requires RENAME_EXCHANGE support")
 	}

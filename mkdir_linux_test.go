@@ -336,6 +336,9 @@ func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafeP
 }
 
 func TestMkdirAllHandle_RacingRename(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
+	if testing.Short() {
+		t.Skip("skipping race tests in short mode")
+	}
 	withWithoutOpenat2(t, false, func(t *testing.T) {
 		treeSpec := []string{
 			"dir target/a/b/c",
@@ -458,6 +461,9 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) { //nolint:revive // undersco
 }
 
 func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
+	if testing.Short() {
+		t.Skip("skipping race tests in short mode")
+	}
 	withWithoutOpenat2(t, false, func(t *testing.T) {
 		treeSpec := []string{
 			"dir target/a/b/c",
@@ -544,6 +550,9 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // undersco
 
 // Regression test for <https://github.com/opencontainers/runc/issues/4543>.
 func TestMkdirAllHandle_RacingCreate(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
+	if testing.Short() {
+		t.Skip("skipping race tests in short mode")
+	}
 	withWithoutOpenat2(t, false, func(t *testing.T) {
 		threadRanges := []int{2, 4, 8, 16, 32, 64, 128, 512, 1024}
 		for _, numThreads := range threadRanges {

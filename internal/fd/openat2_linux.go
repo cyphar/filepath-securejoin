@@ -34,7 +34,7 @@ func scopedLookupShouldRetry(how *unix.OpenHow, err error) bool {
 		(errors.Is(err, unix.EAGAIN) || errors.Is(err, unix.EXDEV))
 }
 
-const scopedLookupMaxRetries = 10
+const scopedLookupMaxRetries = 32
 
 // Openat2 is an [Fd]-based wrapper around unix.Openat2, but with some retry
 // logic in case of EAGAIN errors.

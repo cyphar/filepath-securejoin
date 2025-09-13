@@ -9,10 +9,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-package securejoin
+package procfs
 
 import (
-	"os"
+	"io"
 )
 
 type forceGetProcRootLevel int
@@ -26,7 +26,7 @@ const (
 
 var testingForceGetProcRoot *forceGetProcRootLevel
 
-func testingCheckClose(check bool, f *os.File) bool {
+func testingCheckClose(check bool, f io.Closer) bool {
 	if check {
 		if f != nil {
 			_ = f.Close()
@@ -36,12 +36,12 @@ func testingCheckClose(check bool, f *os.File) bool {
 	return false
 }
 
-func testingForcePrivateProcRootOpenTree(f *os.File) bool {
+func testingForcePrivateProcRootOpenTree(f io.Closer) bool {
 	return testingForceGetProcRoot != nil &&
 		testingCheckClose(*testingForceGetProcRoot >= forceGetProcRootOpenTree, f)
 }
 
-func testingForcePrivateProcRootOpenTreeAtRecursive(f *os.File) bool {
+func testingForcePrivateProcRootOpenTreeAtRecursive(f io.Closer) bool {
 	return testingForceGetProcRoot != nil &&
 		testingCheckClose(*testingForceGetProcRoot >= forceGetProcRootOpenTreeAtRecursive, f)
 }

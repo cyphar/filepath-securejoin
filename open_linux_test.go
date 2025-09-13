@@ -20,6 +20,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/fd"
+	"github.com/cyphar/filepath-securejoin/internal/procfs"
 )
 
 type openInRootFunc func(root, unsafePath string) (*os.File, error)
@@ -67,13 +70,13 @@ func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 	require.NoError(t, err)
 
 	// Get the original handle path.
-	handlePath, err := ProcSelfFdReadlink(handle)
+	handlePath, err := procfs.ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of original handle")
 	// Make sure the handle matches the readlink path.
 	assert.Equal(t, handlePath, handle.Name(), "handle.Name() matching real original handle path")
 
 	// Check that the new and old handle have the same path.
-	newHandlePath, err := ProcSelfFdReadlink(newHandle)
+	newHandlePath, err := procfs.ProcSelfFdReadlink(newHandle)
 	require.NoError(t, err, "get real path of reopened handle")
 	assert.Equal(t, handlePath, newHandlePath, "old and reopen handle paths")
 	assert.Equal(t, handle.Name(), newHandle.Name(), "old and reopen handle.Name()")
@@ -107,14 +110,14 @@ func checkOpenInRoot(t *testing.T, openInRootFn openInRootFunc, root, unsafePath
 	require.NoError(t, err)
 
 	// Check the handle path.
-	gotPath, err := ProcSelfFdReadlink(handle)
+	gotPath, err := procfs.ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expected.handlePath, gotPath, "real handle path")
 	// Make sure the handle matches the readlink path.
 	assert.Equal(t, gotPath, handle.Name(), "handle.Name() matching real handle path")
 
 	// Check the handle type.
-	unixStat, err := fstat(handle)
+	unixStat, err := fd.Fstat(handle)
 	require.NoError(t, err, "fstat handle")
 	assert.Equal(t, expected.fileType, unixStat.Mode&unix.S_IFMT, "handle S_IFMT type")
 

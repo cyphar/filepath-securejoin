@@ -23,6 +23,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
+
+	"github.com/cyphar/filepath-securejoin/internal/fd"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
 func requireRoot(t *testing.T) {
@@ -38,52 +41,12 @@ func withWithoutOpenat2(t *testing.T, doAuto bool, testFn func(t *testing.T)) {
 	for _, useOpenat2 := range []bool{true, false} {
 		useOpenat2 := useOpenat2 // copy iterator
 		t.Run(fmt.Sprintf("openat2=%v", useOpenat2), func(t *testing.T) {
-			if useOpenat2 && !hasOpenat2() {
+			if useOpenat2 && !linux.HasOpenat2() {
 				t.Skip("no openat2 support")
 			}
-			origHasOpenat2 := hasOpenat2
-			hasOpenat2 = func() bool { return useOpenat2 }
-			defer func() { hasOpenat2 = origHasOpenat2 }()
-
-			testFn(t)
-		})
-	}
-}
-
-func testForceGetProcRoot(t *testing.T, testFn func(t *testing.T, expectOvermounts bool)) {
-	for _, test := range []struct {
-		name             string
-		forceGetProcRoot forceGetProcRootLevel
-		expectOvermounts bool
-	}{
-		{`procfd="fsopen()"`, forceGetProcRootDefault, false},
-		{`procfd="open_tree_clone"`, forceGetProcRootOpenTree, false},
-		{`procfd="open_tree_clone(AT_RECURSIVE)"`, forceGetProcRootOpenTreeAtRecursive, true},
-		{`procfd="open()"`, forceGetProcRootUnsafe, true},
-	} {
-		test := test // copy iterator
-		t.Run(test.name, func(t *testing.T) {
-			testingForceGetProcRoot = &test.forceGetProcRoot
-			defer func() { testingForceGetProcRoot = nil }()
-
-			testFn(t, test.expectOvermounts)
-		})
-	}
-}
-
-func testForceProcThreadSelf(t *testing.T, testFn func(t *testing.T)) {
-	for _, test := range []struct {
-		name                string
-		forceProcThreadSelf forceProcThreadSelfLevel
-	}{
-		{`thread-self="thread-self"`, forceProcThreadSelfDefault},
-		{`thread-self="self/task"`, forceProcSelfTask},
-		{`thread-self="self"`, forceProcSelf},
-	} {
-		test := test // copy iterator
-		t.Run(test.name, func(t *testing.T) {
-			testingForceProcThreadSelf = &test.forceProcThreadSelf
-			defer func() { testingForceProcThreadSelf = nil }()
+			origHasOpenat2 := linux.HasOpenat2
+			linux.HasOpenat2 = func() bool { return useOpenat2 }
+			defer func() { linux.HasOpenat2 = origHasOpenat2 }()
 
 			testFn(t)
 		})
@@ -95,7 +58,7 @@ func hasRenameExchange() bool {
 	return !errors.Is(err, unix.ENOSYS)
 }
 
-func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir *os.File, pathA, pathB string) {
+func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir fd.Fd, pathA, pathB string) {
 	for {
 		select {
 		case <-exitCh:

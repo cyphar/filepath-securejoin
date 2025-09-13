@@ -21,7 +21,11 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
+	"github.com/cyphar/filepath-securejoin/internal/procfs"
 )
 
 type symlinkStackEntry struct {
@@ -124,7 +128,7 @@ func (s *symlinkStack) push(dir *os.File, remainingPath, linkTarget string) erro
 		func(part string) bool { return part == "" || part == "." })
 
 	// Copy the directory so the caller doesn't close our copy.
-	dirCopy, err := dupFile(dir)
+	dirCopy, err := fd.Dup(dir)
 	if err != nil {
 		return err
 	}
@@ -166,11 +170,11 @@ func (s *symlinkStack) PopTopSymlink() (*os.File, string, bool) {
 // within the provided root (a-la RESOLVE_IN_ROOT) and opens the final existing
 // component of the requested path, returning a file handle to the final
 // existing component and a string containing the remaining path components.
-func partialLookupInRoot(root *os.File, unsafePath string) (*os.File, string, error) {
+func partialLookupInRoot(root fd.Fd, unsafePath string) (*os.File, string, error) {
 	return lookupInRoot(root, unsafePath, true)
 }
 
-func completeLookupInRoot(root *os.File, unsafePath string) (*os.File, error) {
+func completeLookupInRoot(root fd.Fd, unsafePath string) (*os.File, error) {
 	handle, remainingPath, err := lookupInRoot(root, unsafePath, false)
 	if remainingPath != "" && err == nil {
 		// should never happen
@@ -181,7 +185,7 @@ func completeLookupInRoot(root *os.File, unsafePath string) (*os.File, error) {
 	return handle, err
 }
 
-func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.File, _ string, _ error) {
+func lookupInRoot(root fd.Fd, unsafePath string, partial bool) (Handle *os.File, _ string, _ error) {
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 
 	// This is very similar to SecureJoin, except that we operate on the
@@ -189,20 +193,20 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 	// managed open, along with the remaining path components not opened.
 
 	// Try to use openat2 if possible.
-	if hasOpenat2() {
+	if linux.HasOpenat2() {
 		return lookupOpenat2(root, unsafePath, partial)
 	}
 
 	// Get the "actual" root path from /proc/self/fd. This is necessary if the
 	// root is some magic-link like /proc/$pid/root, in which case we want to
-	// make sure when we do checkProcSelfFdPath that we are using the correct
-	// root path.
-	logicalRootPath, err := ProcSelfFdReadlink(root)
+	// make sure when we do procfs.CheckProcSelfFdPath that we are using the
+	// correct root path.
+	logicalRootPath, err := procfs.ProcSelfFdReadlink(root)
 	if err != nil {
 		return nil, "", fmt.Errorf("get real root path: %w", err)
 	}
 
-	currentDir, err := dupFile(root)
+	currentDir, err := fd.Dup(root)
 	if err != nil {
 		return nil, "", fmt.Errorf("clone root fd: %w", err)
 	}
@@ -267,7 +271,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 				return nil, "", fmt.Errorf("walking into root with part %q failed: %w", part, err)
 			}
 			// Jump to root.
-			rootClone, err := dupFile(root)
+			rootClone, err := fd.Dup(root)
 			if err != nil {
 				return nil, "", fmt.Errorf("clone root fd: %w", err)
 			}
@@ -278,7 +282,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 		}
 
 		// Try to open the next component.
-		nextDir, err := openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		nextDir, err := fd.Openat(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		switch err {
 		case nil:
 			st, err := nextDir.Stat()
@@ -292,7 +296,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 				// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See
 				// Linux commit 65cfc6722361 ("readlinkat(), fchownat() and
 				// fstatat() with empty relative pathnames").
-				linkDest, err := readlinkatFile(nextDir, "")
+				linkDest, err := fd.Readlinkat(nextDir, "")
 				// We don't need the handle anymore.
 				_ = nextDir.Close()
 				if err != nil {
@@ -300,7 +304,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 				}
 
 				linksWalked++
-				if linksWalked > maxSymlinkLimit {
+				if linksWalked > internal.MaxSymlinkLimit {
 					return nil, "", &os.PathError{Op: "securejoin.lookupInRoot", Path: logicalRootPath + "/" + unsafePath, Err: unix.ELOOP}
 				}
 
@@ -314,7 +318,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 				// Absolute symlinks reset any work we've already done.
 				if path.IsAbs(linkDest) {
 					// Jump to root.
-					rootClone, err := dupFile(root)
+					rootClone, err := fd.Dup(root)
 					if err != nil {
 						return nil, "", fmt.Errorf("clone root fd: %w", err)
 					}
@@ -342,12 +346,12 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 				// rename or mount on the system.
 				if part == ".." {
 					// Make sure the root hasn't moved.
-					if err := checkProcSelfFdPath(logicalRootPath, root); err != nil {
+					if err := procfs.CheckProcSelfFdPath(logicalRootPath, root); err != nil {
 						return nil, "", fmt.Errorf("root path moved during lookup: %w", err)
 					}
 					// Make sure the path is what we expect.
 					fullPath := logicalRootPath + nextPath
-					if err := checkProcSelfFdPath(fullPath, currentDir); err != nil {
+					if err := procfs.CheckProcSelfFdPath(fullPath, currentDir); err != nil {
 						return nil, "", fmt.Errorf("walking into %q had unexpected result: %w", part, err)
 					}
 				}
@@ -378,7 +382,7 @@ func lookupInRoot(root *os.File, unsafePath string, partial bool) (Handle *os.Fi
 	// context of openat2, a trailing slash and a trailing "/." are completely
 	// equivalent.
 	if strings.HasSuffix(unsafePath, "/") {
-		nextDir, err := openatFile(currentDir, ".", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		nextDir, err := fd.Openat(currentDir, ".", unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
 			if !partial {
 				_ = currentDir.Close()

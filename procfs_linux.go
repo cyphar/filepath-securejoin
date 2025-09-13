@@ -273,11 +273,7 @@ func procOpen(procRoot *os.File, subpath string) (*os.File, error) {
 
 	handle, err := procfsLookupInRoot(procRoot, subpath)
 	if err != nil {
-		// TODO: Once we bump the minimum Go version to 1.20, we can use
-		// multiple %w verbs for this wrapping. For now we need to use a
-		// compatibility shim for older Go versions.
-		// err = fmt.Errorf("%w: %w", errUnsafeProcfs, err)
-		return nil, gocompat.WrapBaseError(err, errUnsafeProcfs)
+		return nil, err
 	}
 	return handle, nil
 }

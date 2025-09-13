@@ -13,7 +13,7 @@
 // <https://github.com/opensuse/libpathrs/blob/v0.1.3/src/resolvers/procfs.rs>.
 // As we only need O_PATH|O_NOFOLLOW support, this is not too much to port.
 
-package securejoin
+package procfs
 
 import (
 	"fmt"
@@ -24,7 +24,10 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
 // procfsLookupInRoot is a stripped down version of completeLookupInRoot,
@@ -49,7 +52,7 @@ import (
 //
 // If the system supports openat2(), this is implemented using equivalent flags
 // (RESOLVE_BENEATH | RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS).
-func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, _ error) {
+func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ error) {
 	unsafePath = filepath.ToSlash(unsafePath) // noop
 
 	// Make sure that an empty unsafe path still returns something sane, even
@@ -64,7 +67,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 		return nil, err
 	}
 
-	if hasOpenat2() {
+	if linux.HasOpenat2() {
 		// We prefer being able to use RESOLVE_NO_XDEV if we can, to be
 		// absolutely sure we are operating on a clean /proc handle that
 		// doesn't have any cheeky overmounts that could trick us (including
@@ -75,13 +78,9 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 		//       symlink are generated dynamically), but it doesn't use
 		//       nd_jump_link() so RESOLVE_NO_MAGICLINKS allows it.
 		//
-		// NOTE: We MUST NOT use RESOLVE_IN_ROOT here, as openat2File uses
-		//       ProcSelfFdReadlink to clean up the returned f.Name() if we use
-		//       RESOLVE_IN_ROOT (which would lead to an infinite recursion).
-		//
 		// TODO: It would be nice to have RESOLVE_NO_DOTDOT, purely for
 		//       self-consistency with the backup O_PATH resolver.
-		handle, err := openat2File(procRoot, unsafePath, &unix.OpenHow{
+		handle, err := fd.Openat2(procRoot, unsafePath, &unix.OpenHow{
 			Flags:   unix.O_PATH | unix.O_NOFOLLOW | unix.O_CLOEXEC,
 			Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_XDEV | unix.RESOLVE_NO_MAGICLINKS,
 		})
@@ -98,10 +97,10 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 	// To mirror openat2(RESOLVE_BENEATH), we need to return an error if the
 	// path is absolute.
 	if path.IsAbs(unsafePath) {
-		return nil, fmt.Errorf("%w: cannot resolve absolute paths in procfs resolver", errPossibleBreakout)
+		return nil, fmt.Errorf("%w: cannot resolve absolute paths in procfs resolver", internal.ErrPossibleBreakout)
 	}
 
-	currentDir, err := dupFile(procRoot)
+	currentDir, err := fd.Dup(procRoot)
 	if err != nil {
 		return nil, fmt.Errorf("clone root fd: %w", err)
 	}
@@ -131,7 +130,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 		}
 		if part == ".." {
 			// not permitted
-			return nil, fmt.Errorf("%w: cannot walk into '..' in procfs resolver", errPossibleBreakout)
+			return nil, fmt.Errorf("%w: cannot walk into '..' in procfs resolver", internal.ErrPossibleBreakout)
 		}
 
 		// Apply the component lexically to the path we are building.
@@ -143,7 +142,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 		// opening the part and doing all of the other checks.
 		if nextPath == "/" {
 			// Jump to root.
-			rootClone, err := dupFile(procRoot)
+			rootClone, err := fd.Dup(procRoot)
 			if err != nil {
 				return nil, fmt.Errorf("clone root fd: %w", err)
 			}
@@ -154,7 +153,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 		}
 
 		// Try to open the next component.
-		nextDir, err := openatFile(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		nextDir, err := fd.Openat(currentDir, part, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +163,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 			_ = nextDir.Close()
 			return nil, fmt.Errorf("check %q component is on procfs: %w", part, err)
 		}
-		if err := checkSubpathOvermount(procRoot, nextDir, ""); err != nil {
+		if err := CheckSubpathOvermount(procRoot, nextDir, ""); err != nil {
 			_ = nextDir.Close()
 			return nil, fmt.Errorf("check %q component is not overmounted: %w", part, err)
 		}
@@ -183,7 +182,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 				// readlinkat implies AT_EMPTY_PATH since Linux 2.6.39. See
 				// Linux commit 65cfc6722361 ("readlinkat(), fchownat() and
 				// fstatat() with empty relative pathnames").
-				linkDest, err := readlinkatFile(nextDir, "")
+				linkDest, err := fd.Readlinkat(nextDir, "")
 				// We don't need the handle anymore.
 				_ = nextDir.Close()
 				if err != nil {
@@ -191,7 +190,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 				}
 
 				linksWalked++
-				if linksWalked > maxSymlinkLimit {
+				if linksWalked > internal.MaxSymlinkLimit {
 					return nil, &os.PathError{Op: "securejoin.procfsLookupInRoot", Path: "/proc/" + unsafePath, Err: unix.ELOOP}
 				}
 
@@ -199,7 +198,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 				remainingPath = linkDest + "/" + remainingPath
 				// Absolute symlinks are probably magiclinks, we reject them.
 				if path.IsAbs(linkDest) {
-					return nil, fmt.Errorf("%w: cannot jump to / in procfs resolver -- possible magiclink", errPossibleBreakout)
+					return nil, fmt.Errorf("%w: cannot jump to / in procfs resolver -- possible magiclink", internal.ErrPossibleBreakout)
 				}
 				continue
 			}
@@ -215,7 +214,7 @@ func procfsLookupInRoot(procRoot *os.File, unsafePath string) (Handle *os.File, 
 	if err := verifyProcHandle(currentDir); err != nil {
 		return nil, fmt.Errorf("check final handle is on procfs: %w", err)
 	}
-	if err := checkSubpathOvermount(procRoot, currentDir, ""); err != nil {
+	if err := CheckSubpathOvermount(procRoot, currentDir, ""); err != nil {
 		return nil, fmt.Errorf("check final handle is not overmounted: %w", err)
 	}
 	return currentDir, nil

@@ -23,10 +23,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal"
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/procfs"
 )
 
-type partialLookupFunc func(root *os.File, unsafePath string) (*os.File, string, error)
+type partialLookupFunc func(root fd.Fd, unsafePath string) (*os.File, string, error)
 
 type lookupResult struct {
 	handlePath, remainingPath string
@@ -34,7 +37,7 @@ type lookupResult struct {
 	fileType                  uint32
 }
 
-func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir *os.File, unsafePath string, expected lookupResult) {
+func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir fd.Fd, unsafePath string, expected lookupResult) {
 	handle, remainingPath, err := partialLookupFn(rootDir, unsafePath)
 	if handle != nil {
 		defer handle.Close() //nolint:errcheck // test code
@@ -59,14 +62,14 @@ func checkPartialLookup(t *testing.T, partialLookupFn partialLookupFunc, rootDir
 	assert.Equal(t, expected.remainingPath, remainingPath, "remaining path")
 
 	// Check the handle path.
-	gotPath, err := ProcSelfFdReadlink(handle)
+	gotPath, err := procfs.ProcSelfFdReadlink(handle)
 	require.NoError(t, err, "get real path of returned handle")
 	assert.Equal(t, expected.handlePath, gotPath, "real handle path")
 	// Make sure the handle matches the readlink path.
 	assert.Equal(t, gotPath, handle.Name(), "handle.Name() matching real handle path")
 
 	// Check the handle type.
-	unixStat, err := fstat(handle)
+	unixStat, err := fd.Fstat(handle)
 	require.NoError(t, err, "fstat handle")
 	assert.Equal(t, expected.fileType, unixStat.Mode&unix.S_IFMT, "handle S_IFMT type")
 }
@@ -366,7 +369,7 @@ func newRacingLookupMeta(pauseCh chan struct{}) *racingLookupMeta {
 	}
 }
 
-func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, unsafePath string, skipErrs []error, allowedResults []lookupResult) {
+func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir fd.Fd, unsafePath string, skipErrs []error, allowedResults []lookupResult) {
 	// Similar to checkPartialLookup, but with extra logic for
 	// handling the lookup stopping partly through the lookup.
 	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath)
@@ -380,11 +383,11 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir *os.File, un
 
 		// Get the "proper" name from ProcSelfFdReadlink.
 		m.pauseCh <- struct{}{}
-		realPath, err = ProcSelfFdReadlink(handle)
+		realPath, err = procfs.ProcSelfFdReadlink(handle)
 		<-m.pauseCh
 		require.NoError(t, err, "get real path of returned handle")
 
-		unixStat, err = fstat(handle)
+		unixStat, err = fd.Fstat(handle)
 		require.NoError(t, err, "stat handle")
 
 		_ = handle.Close()
@@ -535,7 +538,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			)},
 		} {
 			test := test // copy iterator
-			test.skipErrs = append(test.skipErrs, errPossibleAttack, errPossibleBreakout)
+			test.skipErrs = append(test.skipErrs, internal.ErrPossibleAttack, internal.ErrPossibleBreakout)
 			t.Run(name, func(t *testing.T) {
 				root := createTree(t, tree...)
 

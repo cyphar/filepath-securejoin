@@ -20,13 +20,12 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
+	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
-var (
-	errInvalidMode    = errors.New("invalid permission mode")
-	errPossibleAttack = errors.New("possible attack detected")
-)
+var errInvalidMode = errors.New("invalid permission mode")
 
 // modePermExt is like os.ModePerm except that it also includes the set[ug]id
 // and sticky bits.
@@ -109,7 +108,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 	//
 	// This is mostly a quality-of-life check, because mkdir will simply fail
 	// later if the attacker deletes the tree after this check.
-	if err := isDeadInode(currentDir); err != nil {
+	if err := fd.IsDeadInode(currentDir); err != nil {
 		return nil, fmt.Errorf("finding existing subpath of %q: %w", unsafePath, err)
 	}
 
@@ -157,7 +156,7 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 		if err := unix.Mkdirat(int(currentDir.Fd()), part, unixMode); err != nil && !errors.Is(err, unix.EEXIST) {
 			err = &os.PathError{Op: "mkdirat", Path: currentDir.Name() + "/" + part, Err: err}
 			// Make the error a bit nicer if the directory is dead.
-			if deadErr := isDeadInode(currentDir); deadErr != nil {
+			if deadErr := fd.IsDeadInode(currentDir); deadErr != nil {
 				// TODO: Once we bump the minimum Go version to 1.20, we can use
 				// multiple %w verbs for this wrapping. For now we need to use a
 				// compatibility shim for older Go versions.
@@ -170,13 +169,13 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 		// Get a handle to the next component. O_DIRECTORY means we don't need
 		// to use O_PATH.
 		var nextDir *os.File
-		if hasOpenat2() {
-			nextDir, err = openat2File(currentDir, part, &unix.OpenHow{
+		if linux.HasOpenat2() {
+			nextDir, err = openat2(currentDir, part, &unix.OpenHow{
 				Flags:   unix.O_NOFOLLOW | unix.O_DIRECTORY | unix.O_CLOEXEC,
 				Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_XDEV,
 			})
 		} else {
-			nextDir, err = openatFile(currentDir, part, unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+			nextDir, err = fd.Openat(currentDir, part, unix.O_NOFOLLOW|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		}
 		if err != nil {
 			return nil, err

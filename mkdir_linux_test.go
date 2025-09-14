@@ -50,9 +50,12 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	}
 	defer handle.Close() //nolint:errcheck // test code
 
-	// We can use SecureJoin here because we aren't being attacked in this
-	// particular test. Obviously this check is bogus for actual programs.
-	expectedPath, err := SecureJoin(root, unsafePath)
+	// We can lookup the expected path again to get the full path. This will
+	// give a reasonable result because we aren't being attacked in this
+	// particular test.
+	handle2, err := OpenatInRoot(rootDir, unsafePath)
+	require.NoError(t, err)
+	expectedPath, err := procfs.ProcSelfFdReadlink(handle2)
 	require.NoError(t, err)
 
 	// Now double-check that the handle is correct.

@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cyphar/filepath-securejoin/internal"
+	"github.com/cyphar/filepath-securejoin/internal/consts"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 	"github.com/cyphar/filepath-securejoin/internal/linux"
@@ -190,7 +191,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 				}
 
 				linksWalked++
-				if linksWalked > internal.MaxSymlinkLimit {
+				if linksWalked > consts.MaxSymlinkLimit {
 					return nil, &os.PathError{Op: "securejoin.procfsLookupInRoot", Path: "/proc/" + unsafePath, Err: unix.ELOOP}
 				}
 

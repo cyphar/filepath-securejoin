@@ -9,38 +9,73 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-package securejoin
+package testutils
 
 import (
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
-	"testing"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/linux"
 )
 
-func requireRoot(t *testing.T) {
+// RequireRoot skips the current test if we are not root.
+func RequireRoot(t TestingT) {
 	if os.Geteuid() != 0 {
 		t.Skip("test requires root")
 	}
 }
 
-func withWithoutOpenat2(t *testing.T, doAuto bool, testFn func(t *testing.T)) {
+// RequireRenameExchange skips the current test if renameat2(2) is not
+// supported on the running system.
+func RequireRenameExchange(t TestingT) {
+	err := unix.Renameat2(unix.AT_FDCWD, ".", unix.AT_FDCWD, ".", unix.RENAME_EXCHANGE)
+	if errors.Is(err, unix.ENOSYS) {
+		t.Skip("test requires RENAME_EXCHANGE support")
+	}
+}
+
+// TDoFunc is effectively a func(t *testing.T) function but using the
+// [TestingT] interface to allow us to write testutils with non-test code. The
+// argument is virtually guaranteed to be a *testing.T instance so you can just
+// do a type assertion in the body of the closure.
+type TDoFunc func(ti TestingT)
+
+// TRunFunc is a wrapper around t.Run but done with an interface that can be
+// used in non-testing code. To use this, you should just define a wrapper
+// function like this:
+//
+//	func tRunWrapper(t *testing.T) testutils.TRunFunc {
+//		return func(name string, doFn testutils.TDoFunc) {
+//			t.Run(name, func(t *testing.T) {
+//				doFn(t)
+//			})
+//		}
+//	 }
+//
+// and then use it with [WithWithoutOpenat2] like so:
+//
+//	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+//		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
+//		/* test code */
+//	})
+type TRunFunc func(name string, doFn TDoFunc)
+
+// WithWithoutOpenat2 runs a given test with and without openat2 (by forcefully
+// disabling its usage).
+func WithWithoutOpenat2(doAuto bool, tRunFn TRunFunc, doFn TDoFunc) {
 	if doAuto {
-		t.Run("openat2=auto", testFn)
+		tRunFn("openat2=auto", doFn)
 	}
 	for _, useOpenat2 := range []bool{true, false} {
 		useOpenat2 := useOpenat2 // copy iterator
-		t.Run(fmt.Sprintf("openat2=%v", useOpenat2), func(t *testing.T) {
+		tRunFn(fmt.Sprintf("openat2=%v", useOpenat2), func(t TestingT) {
 			if useOpenat2 && !linux.HasOpenat2() {
 				t.Skip("no openat2 support")
 			}
@@ -48,45 +83,13 @@ func withWithoutOpenat2(t *testing.T, doAuto bool, testFn func(t *testing.T)) {
 			linux.HasOpenat2 = func() bool { return useOpenat2 }
 			defer func() { linux.HasOpenat2 = origHasOpenat2 }()
 
-			testFn(t)
+			doFn(t)
 		})
 	}
 }
 
-func hasRenameExchange() bool {
-	err := unix.Renameat2(unix.AT_FDCWD, ".", unix.AT_FDCWD, ".", unix.RENAME_EXCHANGE)
-	return !errors.Is(err, unix.ENOSYS)
-}
-
-func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir fd.Fd, pathA, pathB string) {
-	for {
-		select {
-		case <-exitCh:
-			return
-		case <-pauseCh:
-			// Wait for caller to unpause us.
-			select {
-			case pauseCh <- struct{}{}:
-			case <-exitCh:
-				return
-			}
-		default:
-			// Do the swap twice so that we only pause when we are in a
-			// "correct" state.
-			for i := 0; i < 2; i++ {
-				err := unix.Renameat2(int(dir.Fd()), pathA, int(dir.Fd()), pathB, unix.RENAME_EXCHANGE)
-				if err != nil && int(dir.Fd()) != -1 && !errors.Is(err, unix.EBADF) {
-					// Should never happen, and if it does we will potentially
-					// enter a bad filesystem state if we get paused.
-					panic(fmt.Sprintf("renameat2([%d]%q, %q, ..., %q, RENAME_EXCHANGE) = %v", int(dir.Fd()), dir.Name(), pathA, pathB, err))
-				}
-			}
-		}
-		// Make sure GC doesn't close the directory handle.
-		runtime.KeepAlive(dir)
-	}
-}
-
+// CreateInTree creates a given inode inside the root directory.
+//
 // Format:
 //
 //	dir <name> <?uid:gid:mode>
@@ -96,7 +99,7 @@ func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir fd.
 //	block <name> <major> <minor> <?uid:gid:mode>
 //	fifo <name> <?uid:gid:mode>
 //	sock <name> <?uid:gid:mode>
-func createInTree(t *testing.T, root, spec string) {
+func CreateInTree(t TestingT, root, spec string) {
 	f := strings.Fields(spec)
 	if len(f) < 2 {
 		t.Fatalf("invalid spec %q", spec)
@@ -110,7 +113,7 @@ func createInTree(t *testing.T, root, spec string) {
 		if len(f) >= 1 {
 			setOwnerMode = &f[0]
 		}
-		mkdirAll(t, fullPath, 0o755)
+		MkdirAll(t, fullPath, 0o755)
 	case "file":
 		var contents []byte
 		if len(f) >= 1 {
@@ -119,13 +122,13 @@ func createInTree(t *testing.T, root, spec string) {
 		if len(f) >= 2 {
 			setOwnerMode = &f[1]
 		}
-		writeFile(t, fullPath, contents, 0o644)
+		WriteFile(t, fullPath, contents, 0o644)
 	case "symlink":
 		if len(f) < 1 {
 			t.Fatalf("invalid spec %q", spec)
 		}
 		target := f[0]
-		symlink(t, target, fullPath)
+		Symlink(t, target, fullPath)
 	case "char", "block":
 		if len(f) < 2 {
 			t.Fatalf("invalid spec %q", spec)
@@ -187,15 +190,17 @@ func createInTree(t *testing.T, root, spec string) {
 	}
 }
 
-func createTree(t *testing.T, specs ...string) string {
+// CreateTree creates a rootfs tree using spec entries (as documented in
+// [CreateInTree]). The returned path is the path to the root of the new tree.
+func CreateTree(t TestingT, specs ...string) string {
 	root := t.TempDir()
 
 	// Put the root in a subdir.
 	treeRoot := filepath.Join(root, "tree")
-	mkdirAll(t, treeRoot, 0o755)
+	MkdirAll(t, treeRoot, 0o755)
 
 	for _, spec := range specs {
-		createInTree(t, treeRoot, spec)
+		CreateInTree(t, treeRoot, spec)
 	}
 	return treeRoot
 }

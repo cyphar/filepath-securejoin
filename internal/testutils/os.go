@@ -7,26 +7,28 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-package securejoin
+package testutils
 
 import (
 	"os"
-	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func symlink(t *testing.T, oldname, newname string) {
+// Symlink is a wrapper around os.Symlink.
+func Symlink(t TestingT, oldname, newname string) {
 	err := os.Symlink(oldname, newname)
 	require.NoError(t, err)
 }
 
-func mkdirAll(t *testing.T, path string, mode os.FileMode) { //nolint:unparam // wrapper func
+// MkdirAll is a wrapper around os.MkdirAll.
+func MkdirAll(t TestingT, path string, mode os.FileMode) { //nolint:unparam // wrapper func
 	err := os.MkdirAll(path, mode)
 	require.NoError(t, err)
 }
 
-func writeFile(t *testing.T, path string, data []byte, mode os.FileMode) {
+// WriteFile is a wrapper around os.WriteFile.
+func WriteFile(t TestingT, path string, data []byte, mode os.FileMode) {
 	err := os.WriteFile(path, data, mode)
 	require.NoError(t, err)
 }

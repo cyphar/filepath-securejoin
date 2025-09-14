@@ -23,6 +23,7 @@ import (
 
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/procfs"
+	"github.com/cyphar/filepath-securejoin/internal/testutils"
 )
 
 type openInRootFunc func(root, unsafePath string) (*os.File, error)
@@ -210,7 +211,7 @@ func testOpenInRoot(t *testing.T, openInRootFn openInRootFunc) {
 		"symlink loop/link a/link",
 	}
 
-	root := createTree(t, tree...)
+	root := testutils.CreateTree(t, tree...)
 
 	for name, test := range map[string]struct {
 		unsafePath string
@@ -361,13 +362,15 @@ func testOpenInRoot(t *testing.T, openInRootFn openInRootFunc) {
 }
 
 func TestOpenInRoot(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		testOpenInRoot(t, OpenInRoot)
 	})
 }
 
 func TestOpenInRootHandle(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		testOpenInRoot(t, func(root, unsafePath string) (*os.File, error) {
 			rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 			if err != nil {
@@ -381,9 +384,10 @@ func TestOpenInRootHandle(t *testing.T) {
 }
 
 func TestOpenInRoot_BadInode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
-	requireRoot(t) // mknod
+	testutils.RequireRoot(t) // mknod
 
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		tree := []string{
 			// Make sure we don't open "bad" inodes.
 			"dir foo",
@@ -391,7 +395,7 @@ func TestOpenInRoot_BadInode(t *testing.T) { //nolint:revive // underscores are 
 			"block foo/whiteout-blk 0 0",
 		}
 
-		root := createTree(t, tree...)
+		root := testutils.CreateTree(t, tree...)
 
 		rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)

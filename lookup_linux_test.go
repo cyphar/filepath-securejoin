@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/gocompat"
 	"github.com/cyphar/filepath-securejoin/internal/procfs"
+	"github.com/cyphar/filepath-securejoin/internal/testutils"
 )
 
 type partialLookupFunc func(root fd.Fd, unsafePath string) (*os.File, string, error)
@@ -147,7 +149,7 @@ func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {
 		"symlink loop/link a/link",
 	}
 
-	root := createTree(t, tree...)
+	root := testutils.CreateTree(t, tree...)
 
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	require.NoError(t, err)
@@ -299,8 +301,17 @@ func testPartialLookup(t *testing.T, partialLookupFn partialLookupFunc) {
 	}
 }
 
+func tRunWrapper(t *testing.T) testutils.TRunFunc {
+	return func(name string, doFn testutils.TDoFunc) {
+		t.Run(name, func(t *testing.T) {
+			doFn(t)
+		})
+	}
+}
+
 func TestPartialLookupInRoot(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		testPartialLookup(t, partialLookupInRoot)
 	})
 }
@@ -310,9 +321,10 @@ func TestPartialOpenat2(t *testing.T) {
 }
 
 func TestPartialLookupInRoot_BadInode(t *testing.T) {
-	requireRoot(t) // mknod
+	testutils.RequireRoot(t) // mknod
 
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		partialLookupFn := partialLookupInRoot
 
 		tree := []string{
@@ -322,7 +334,7 @@ func TestPartialLookupInRoot_BadInode(t *testing.T) {
 			"block foo/whiteout-blk 0 0",
 		}
 
-		root := createTree(t, tree...)
+		root := testutils.CreateTree(t, tree...)
 
 		rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 		require.NoError(t, err)
@@ -444,15 +456,45 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir fd.Fd, unsaf
 	(*counter)++
 }
 
+// doRenameExchangeLoop runs in a loop swapping two paths, intended to be run
+// in a goroutine during a test.
+func doRenameExchangeLoop(pauseCh chan struct{}, exitCh <-chan struct{}, dir fd.Fd, pathA, pathB string) {
+	for {
+		select {
+		case <-exitCh:
+			return
+		case <-pauseCh:
+			// Wait for caller to unpause us.
+			select {
+			case pauseCh <- struct{}{}:
+			case <-exitCh:
+				return
+			}
+		default:
+			// Do the swap twice so that we only pause when we are in a
+			// "correct" state.
+			for i := 0; i < 2; i++ {
+				err := unix.Renameat2(int(dir.Fd()), pathA, int(dir.Fd()), pathB, unix.RENAME_EXCHANGE)
+				if err != nil && int(dir.Fd()) != -1 && !errors.Is(err, unix.EBADF) {
+					// Should never happen, and if it does we will potentially
+					// enter a bad filesystem state if we get paused.
+					panic(fmt.Sprintf("renameat2([%d]%q, %q, ..., %q, RENAME_EXCHANGE) = %v", int(dir.Fd()), dir.Name(), pathA, pathB, err))
+				}
+			}
+		}
+		// Make sure GC doesn't close the directory handle.
+		runtime.KeepAlive(dir)
+	}
+}
+
 func TestPartialLookup_RacingRename(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping race tests in short mode")
 	}
-	if !hasRenameExchange() {
-		t.Skip("test requires RENAME_EXCHANGE support")
-	}
+	testutils.RequireRenameExchange(t)
 
-	withWithoutOpenat2(t, false, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		tree := []string{
 			"dir a/b/c/d",
 			"symlink b-link ../b/../b/../b/../b/../b/../b/../b/../b/../b/../b/../b/../b/../b",
@@ -540,7 +582,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			test := test // copy iterator
 			test.skipErrs = append(test.skipErrs, internal.ErrPossibleAttack, internal.ErrPossibleBreakout)
 			t.Run(name, func(t *testing.T) {
-				root := createTree(t, tree...)
+				root := testutils.CreateTree(t, tree...)
 
 				// Update the handlePath to be inside our root.
 				for idx := range test.allowedResults {

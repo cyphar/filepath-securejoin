@@ -26,6 +26,7 @@ import (
 	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/linux"
+	"github.com/cyphar/filepath-securejoin/internal/testutils"
 )
 
 func newPrivateProcMountSubset() (*Handle, error)   { return newPrivateProcMount(true) }
@@ -66,7 +67,7 @@ func doMount(t *testing.T, source, target, fsType string, flags uintptr) {
 }
 
 func setupMountNamespace(t *testing.T) {
-	requireRoot(t)
+	testutils.RequireRoot(t)
 
 	// Lock our thread because we need to create a custom mount namespace. Each
 	// test run is run in its own goroutine (this is not _explicitly_
@@ -187,8 +188,17 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 	})
 }
 
+func tRunWrapper(t *testing.T) testutils.TRunFunc {
+	return func(name string, doFn testutils.TDoFunc) {
+		t.Run(name, func(t *testing.T) {
+			doFn(t)
+		})
+	}
+}
+
 func TestProcOvermountSubdir_unsafeHostProcRoot(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		// If we use the host /proc directly, we should see overmounts.
 		testProcOvermountSubdir(t, unsafeHostProcRoot, true)
 	})
@@ -198,7 +208,8 @@ func TestProcOvermountSubdir_newPrivateProcMountSubset(t *testing.T) {
 	if !linux.HasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		// If we create our own procfs, the overmounts shouldn't appear.
 		testProcOvermountSubdir(t, newPrivateProcMountSubset, false)
 	})
@@ -208,7 +219,8 @@ func TestProcOvermountSubdir_newPrivateProcMountUnmasked(t *testing.T) {
 	if !linux.HasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		// If we create our own procfs, the overmounts shouldn't appear.
 		testProcOvermountSubdir(t, newPrivateProcMountUnmasked, false)
 	})
@@ -218,7 +230,8 @@ func TestProcOvermountSubdir_clonePrivateProcMount(t *testing.T) {
 	if !linux.HasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		// If we use open_tree(2), we don't use AT_RECURSIVE when running in
 		// this test (because the overmounts are not locked mounts) and so we
 		// don't expect to see overmounts.
@@ -227,7 +240,8 @@ func TestProcOvermountSubdir_clonePrivateProcMount(t *testing.T) {
 }
 
 func TestProcOvermountSubdir_OpenProcRoot(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
@@ -237,7 +251,8 @@ func TestProcOvermountSubdir_OpenProcRoot(t *testing.T) {
 }
 
 func TestProcOvermountSubdir_OpenUnsafeProcRoot(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		// We expect to not get overmounts if we have the new mount API.
 		// FIXME: It's possible to hit overmounts if there are locked mounts
 		// and we hit the AT_RECURSIVE case...
@@ -249,7 +264,8 @@ func TestProcOvermountSubdir_getProcRootSubset_Mocked(t *testing.T) {
 	if !linux.HasNewMountAPI() {
 		t.Skip("test requires fsopen/open_tree support")
 	}
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		testForceGetProcRoot(t, func(t *testing.T, expectOvermounts bool) {
 			procRootFn := func() (*Handle, error) { return getProcRoot(true) }
 			testProcOvermountSubdir(t, procRootFn, expectOvermounts)
@@ -271,7 +287,8 @@ func TestProcThreadSelf(t *testing.T) {
 	proc, err := OpenProcRoot()
 	require.NoError(t, err)
 
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		t.Run("stat", func(t *testing.T) {
 			handle, closer, err := proc.OpenThreadSelf("stat")
 			require.NoError(t, err, "ProcThreadSelf(stat)")
@@ -346,7 +363,8 @@ func TestProcSelf(t *testing.T) {
 	proc, err := OpenProcRoot()
 	require.NoError(t, err)
 
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		t.Run("stat", func(t *testing.T) {
 			handle, err := proc.OpenSelf("stat")
 			require.NoError(t, err, "ProcSelf(stat)")
@@ -413,7 +431,8 @@ func TestProcPid(t *testing.T) {
 	proc, err := OpenProcRoot()
 	require.NoError(t, err)
 
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		t.Run("pid1-stat", func(t *testing.T) {
 			handle, err := proc.OpenPid(1, "stat")
 			require.NoError(t, err, "ProcPid(1, stat)")
@@ -486,7 +505,8 @@ func TestProcRoot(t *testing.T) {
 			proc, err := test.procRootFn()
 			require.NoError(t, err)
 
-			withWithoutOpenat2(t, true, func(t *testing.T) {
+			testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+				t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 				t.Run("sysctl", func(t *testing.T) {
 					handle, err := proc.OpenRoot("sys/kernel/version")
 					require.NoError(t, err, "ProcRoot(sys/kernel/version)")

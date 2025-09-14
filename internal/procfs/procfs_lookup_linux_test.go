@@ -21,14 +21,16 @@ import (
 
 	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/linux"
+	"github.com/cyphar/filepath-securejoin/internal/testutils"
 )
 
 func TestProcfsLookupInRoot(t *testing.T) {
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		// NOTE: We don't actually need root for unsafeHostProcRoot, but we
 		// can't test for that because Go doesn't let you compare function
 		// pointers...
-		requireRoot(t)
+		testutils.RequireRoot(t)
 
 		// The openat2 and non-openat2 backends return different error
 		// messages for the breakout case (".." and suspected magic-links).

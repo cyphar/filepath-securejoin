@@ -27,6 +27,7 @@ import (
 	"github.com/cyphar/filepath-securejoin/internal"
 	"github.com/cyphar/filepath-securejoin/internal/fd"
 	"github.com/cyphar/filepath-securejoin/internal/procfs"
+	"github.com/cyphar/filepath-securejoin/internal/testutils"
 )
 
 type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode os.FileMode) error
@@ -140,7 +141,8 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive /
 		"dir sgid-sticky-self ::3755",
 	}
 
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		for name, test := range map[string]struct {
 			unsafePath       string
 			expectedErr      error
@@ -197,7 +199,7 @@ func testMkdirAll_Basic(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive /
 		} {
 			test := test // copy iterator
 			t.Run(name, func(t *testing.T) {
-				root := createTree(t, tree...)
+				root := testutils.CreateTree(t, tree...)
 				const mode = 0o711
 				checkMkdirAll(t, mkdirAll, root, test.unsafePath, mode, test.expectedModeBits|mode, test.expectedErr)
 			})
@@ -214,7 +216,7 @@ func TestMkdirAllHandle_Basic(t *testing.T) { //nolint:revive // underscores are
 }
 
 func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive // underscores are more readable for test helpers
-	requireRoot(t) // chown
+	testutils.RequireRoot(t) // chown
 
 	// We create a new tree for each test, but the template is the same.
 	tree := []string{
@@ -225,7 +227,8 @@ func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive 
 		"dir sgid-sticky-other 1000:1000:3755",
 	}
 
-	withWithoutOpenat2(t, true, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		for name, test := range map[string]struct {
 			unsafePath       string
 			expectedErr      error
@@ -239,7 +242,7 @@ func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive 
 		} {
 			test := test // copy iterator
 			t.Run(name, func(t *testing.T) {
-				root := createTree(t, tree...)
+				root := testutils.CreateTree(t, tree...)
 				const mode = 0o711
 				checkMkdirAll(t, mkdirAll, root, test.unsafePath, mode, test.expectedModeBits|mode, test.expectedErr)
 			})
@@ -343,7 +346,8 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) { //nolint:revive // undersco
 	if testing.Short() {
 		t.Skip("skipping race tests in short mode")
 	}
-	withWithoutOpenat2(t, false, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		treeSpec := []string{
 			"dir target/a/b/c",
 			"dir swapdir-empty-ok ::0711",
@@ -423,7 +427,7 @@ func TestMkdirAllHandle_RacingRename(t *testing.T) { //nolint:revive // undersco
 				m := newRacingMkdirMeta()
 				doneRuns := 0
 				for ; doneRuns < testRuns || m.passOkCount < minPassCount; doneRuns++ {
-					root := createTree(t, treeSpec...)
+					root := testutils.CreateTree(t, treeSpec...)
 
 					rootCh <- root
 					runtime.Gosched() // give the thread some time to do a rename
@@ -468,7 +472,8 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // undersco
 	if testing.Short() {
 		t.Skip("skipping race tests in short mode")
 	}
-	withWithoutOpenat2(t, false, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		treeSpec := []string{
 			"dir target/a/b/c",
 		}
@@ -512,7 +517,7 @@ func TestMkdirAllHandle_RacingDelete(t *testing.T) { //nolint:revive // undersco
 				m := newRacingMkdirMeta()
 				doneRuns := 0
 				for ; doneRuns < testRuns; doneRuns++ {
-					root := createTree(t, treeSpec...)
+					root := testutils.CreateTree(t, treeSpec...)
 
 					rootCh <- root
 					m.checkMkdirAllHandle_Racing(t, root, test.unsafePath, 0o711, test.allowedErrs)
@@ -557,7 +562,8 @@ func TestMkdirAllHandle_RacingCreate(t *testing.T) { //nolint:revive // undersco
 	if testing.Short() {
 		t.Skip("skipping race tests in short mode")
 	}
-	withWithoutOpenat2(t, false, func(t *testing.T) {
+	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
+		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
 		threadRanges := []int{2, 4, 8, 16, 32, 64, 128, 512, 1024}
 		for _, numThreads := range threadRanges {
 			numThreads := numThreads

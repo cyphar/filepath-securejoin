@@ -7,13 +7,26 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 ## [Unreleased] ##
 
 > **NOTE**: With this release, some parts of
-> `github.com/cyphar/filepath-securejoin` (notably the new APIs introduced
-> since the [0.3.0][] release) are now licensed under the Mozilla Public
-> License (version 2).
+> `github.com/cyphar/filepath-securejoin` are now licensed under the Mozilla
+> Public License (version 2). Please see [COPYING.md][] as well as the the
+> license header in each file for more details.
+
+[COPYING.md]: ./COPYING.md
+
+### Breaking ###
+- The new API introduced in the [0.3.0][] release has been moved to a new
+  subpackage called `pathrs-lite`. This was primarily done to better indicate
+  the split between the new and old APIs, as well as indicate to users the
+  purpose of this subpackage (it is a less complete version of [libpathrs][]).
+
+  We have added some wrappers to the top-level package to ease the transition,
+  but those are deprecated and will be removed in the next minor release of
+  filepath-securejoin. Users should update their import paths.
 
 ### Added ###
-- Most of the key bits the safe `procfs` API have now been exposed. At the
-  moment this primarily consists of a new `ProcfsHandle` API:
+- Most of the key bits the safe `procfs` API have now been exported and are
+  available in `github.com/cyphar/filepath-securejoin/pathrs-lite/procfs`. At
+  the moment this primarily consists of a new `procfs.Handle` API:
 
    * `OpenProcRoot` returns a new handle to `/proc`, endeavouring to make it
      safe if possible (`subset=pid` to protect against mistaken write attacks
@@ -25,8 +38,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
      of an operation, as filepath-securejoin will internally open a handle when
      necessary).
 
-   * The `(*ProcfsHandle).Open*` family of methods lets you get a safe `O_PATH`
-     handle to subpaths within `/proc` for certain subpaths.
+   * The `(*procfs.Handle).Open*` family of methods lets you get a safe
+     `O_PATH` handle to subpaths within `/proc` for certain subpaths.
 
      For `OpenThreadSelf`, the returned `ProcThreadSelfCloser` needs to be
      called after you completely finish using the handle (this is necessary

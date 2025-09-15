@@ -460,12 +460,12 @@ func CheckSubpathOvermount(root, dir fd.Fd, path string) error {
 	return nil
 }
 
-// readlink performs a readlink operation on "/proc/<base>/<subpath>" in a way
+// Readlink performs a readlink operation on "/proc/<base>/<subpath>" in a way
 // that should be free from race attacks. This is most commonly used to get the
 // real path of a file by looking at "/proc/self/fd/$n", with the same safety
 // protections as [Open] (as well as some additional checks against
 // overmounts).
-func (proc *Handle) readlink(base procfsBase, subpath string) (string, error) {
+func (proc *Handle) Readlink(base procfsBase, subpath string) (string, error) {
 	link, closer, err := proc.open(base, subpath)
 	if closer != nil {
 		defer closer()
@@ -506,7 +506,7 @@ func ProcSelfFdReadlink(fd fd.Fd) (string, error) {
 	defer procRoot.Close() //nolint:errcheck // close failures aren't critical here
 
 	fdPath := "fd/" + strconv.Itoa(int(fd.Fd()))
-	return procRoot.readlink(ProcThreadSelf, fdPath)
+	return procRoot.Readlink(ProcThreadSelf, fdPath)
 }
 
 // CheckProcSelfFdPath returns whether the given file handle matches the

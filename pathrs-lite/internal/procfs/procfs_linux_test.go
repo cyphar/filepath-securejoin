@@ -180,10 +180,10 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// fd no overmount
-		_, err = procRoot.readlink(ProcThreadSelf, "fd/1")
+		_, err = procRoot.Readlink(ProcThreadSelf, "fd/1")
 		assert.NoError(t, err, "checking /proc/self/fd/1 with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// fd overmount
-		link, err := procRoot.readlink(ProcThreadSelf, "fd/0")
+		link, err := procRoot.Readlink(ProcThreadSelf, "fd/0")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/fd/0 overmount result: got link %q", link) //nolint:testifylint // this is an isolated operation so we can continue despite an error
 	})
 }

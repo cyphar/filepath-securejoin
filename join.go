@@ -14,7 +14,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/cyphar/filepath-securejoin/internal"
+	"github.com/cyphar/filepath-securejoin/internal/consts"
 )
 
 // IsNotExist tells you if err is an error that implies that either the path
@@ -140,7 +140,7 @@ func SecureJoinVFS(root, unsafePath string, vfs VFS) (string, error) { //nolint:
 		// It's a symlink, so get its contents and expand it by prepending it
 		// to the yet-unparsed path.
 		linksWalked++
-		if linksWalked > internal.MaxSymlinkLimit {
+		if linksWalked > consts.MaxSymlinkLimit {
 			return "", &os.PathError{Op: "SecureJoin", Path: root + string(filepath.Separator) + unsafePath, Err: syscall.ELOOP}
 		}
 

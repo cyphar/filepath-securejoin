@@ -24,6 +24,7 @@ BSD-3-Clause license:
  * `doc.go`
  * `join*.go`
  * `vfs.go`
+ * `internal/consts/*.go`
  * `internal/gocompat/*.go`
  * `internal/kernelversion/*.go`
 

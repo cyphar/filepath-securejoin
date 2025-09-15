@@ -16,6 +16,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cyphar/filepath-securejoin/internal/testutils"
 )
 
 // TODO: These tests won't work on plan9 because it doesn't have symlinks, and
@@ -37,9 +39,9 @@ func expandedTempDir(t *testing.T) string {
 func TestSymlink(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	symlink(t, "somepath", filepath.Join(dir, "etc"))
-	symlink(t, "../../../../../../../../../../../../../etc", filepath.Join(dir, "etclink"))
-	symlink(t, "/../../../../../../../../../../../../../etc/passwd", filepath.Join(dir, "passwd"))
+	testutils.Symlink(t, "somepath", filepath.Join(dir, "etc"))
+	testutils.Symlink(t, "../../../../../../../../../../../../../etc", filepath.Join(dir, "etclink"))
+	testutils.Symlink(t, "/../../../../../../../../../../../../../etc/passwd", filepath.Join(dir, "passwd"))
 
 	rootOrVol := string(filepath.Separator)
 	if vol := filepath.VolumeName(dir); vol != "" {
@@ -118,11 +120,11 @@ func TestNoSymlink(t *testing.T) {
 func TestNonLexical(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
-	mkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0o755)
-	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
-	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
-	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
+	testutils.MkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
+	testutils.MkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0o755)
+	testutils.Symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
+	testutils.Symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
+	testutils.Symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
 
 	for _, test := range []input{
 		{dir, "subdir", filepath.Join(dir, "subdir")},
@@ -151,10 +153,10 @@ func TestNonLexical(t *testing.T) {
 func TestSymlinkLoop(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
-	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "subdir", "link"))
-	symlink(t, "/subdir/link", filepath.Join(dir, "path"))
-	symlink(t, "/../../../../../../../../../../../../../../../../self", filepath.Join(dir, "self"))
+	testutils.MkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
+	testutils.Symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "subdir", "link"))
+	testutils.Symlink(t, "/subdir/link", filepath.Join(dir, "path"))
+	testutils.Symlink(t, "/../../../../../../../../../../../../../../../../self", filepath.Join(dir, "self"))
 
 	for _, test := range []struct {
 		root, unsafe string
@@ -181,9 +183,9 @@ func TestSymlinkLoop(t *testing.T) {
 func TestEnotdir(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
-	writeFile(t, filepath.Join(dir, "notdir"), []byte("I am not a directory!"), 0o755)
-	symlink(t, "/../../../notdir/somechild", filepath.Join(dir, "subdir", "link"))
+	testutils.MkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
+	testutils.WriteFile(t, filepath.Join(dir, "notdir"), []byte("I am not a directory!"), 0o755)
+	testutils.Symlink(t, "/../../../notdir/somechild", filepath.Join(dir, "subdir", "link"))
 
 	for _, test := range []struct {
 		root, unsafe string
@@ -236,11 +238,11 @@ func (m mockVFS) Readlink(path string) (string, error)   { return m.readlink(pat
 func TestSecureJoinVFS(t *testing.T) {
 	dir := expandedTempDir(t)
 
-	mkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
-	mkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0o755)
-	symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
-	symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
-	symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
+	testutils.MkdirAll(t, filepath.Join(dir, "subdir"), 0o755)
+	testutils.MkdirAll(t, filepath.Join(dir, "cousinparent", "cousin"), 0o755)
+	testutils.Symlink(t, "../cousinparent/cousin", filepath.Join(dir, "subdir", "link"))
+	testutils.Symlink(t, "/../cousinparent/cousin", filepath.Join(dir, "subdir", "link2"))
+	testutils.Symlink(t, "/../../../../../../../../../../../../../../../../cousinparent/cousin", filepath.Join(dir, "subdir", "link3"))
 
 	for _, test := range []input{
 		{dir, "subdir", filepath.Join(dir, "subdir")},
@@ -285,7 +287,7 @@ func TestSecureJoinVFSErrors(t *testing.T) {
 	dir := expandedTempDir(t)
 
 	// Make a link.
-	symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "link"))
+	testutils.Symlink(t, "../../../../../../../../../../../../../../../../path", filepath.Join(dir, "link"))
 
 	// Define some fake mock functions.
 	lstatFailFn := func(string) (os.FileInfo, error) { return nil, lstatErr }

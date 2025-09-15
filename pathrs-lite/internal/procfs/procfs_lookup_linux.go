@@ -164,7 +164,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 			_ = nextDir.Close()
 			return nil, fmt.Errorf("check %q component is on procfs: %w", part, err)
 		}
-		if err := CheckSubpathOvermount(procRoot, nextDir, ""); err != nil {
+		if err := checkSubpathOvermount(procRoot, nextDir, ""); err != nil {
 			_ = nextDir.Close()
 			return nil, fmt.Errorf("check %q component is not overmounted: %w", part, err)
 		}
@@ -215,7 +215,7 @@ func procfsLookupInRoot(procRoot fd.Fd, unsafePath string) (Handle *os.File, _ e
 	if err := verifyProcHandle(currentDir); err != nil {
 		return nil, fmt.Errorf("check final handle is on procfs: %w", err)
 	}
-	if err := CheckSubpathOvermount(procRoot, currentDir, ""); err != nil {
+	if err := checkSubpathOvermount(procRoot, currentDir, ""); err != nil {
 		return nil, fmt.Errorf("check final handle is not overmounted: %w", err)
 	}
 	return currentDir, nil

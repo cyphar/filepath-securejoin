@@ -169,14 +169,14 @@ func testProcOvermountSubdir(t *testing.T, procRootFn procRootFunc, expectOvermo
 		defer procExe.Close() //nolint:errcheck // test code
 
 		// no overmount
-		err = CheckSubpathOvermount(procRoot.Inner, procCwd, "")
+		err = checkSubpathOvermount(procRoot.Inner, procCwd, "")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = CheckSubpathOvermount(procRoot.Inner, procSelf, "cwd")
+		err = checkSubpathOvermount(procRoot.Inner, procSelf, "cwd")
 		assert.NoError(t, err, "checking /proc/self/cwd with no overmount should succeed") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 		// basic overmount
-		err = CheckSubpathOvermount(procRoot.Inner, procExe, "")
+		err = checkSubpathOvermount(procRoot.Inner, procExe, "")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
-		err = CheckSubpathOvermount(procRoot.Inner, procSelf, "exe")
+		err = checkSubpathOvermount(procRoot.Inner, procSelf, "exe")
 		assert.ErrorIs(t, err, symlinkOvermountErr, "unexpected /proc/self/exe overmount result") //nolint:testifylint // this is an isolated operation so we can continue despite an error
 
 		// fd no overmount

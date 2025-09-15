@@ -34,18 +34,22 @@ func TestOpenProcRoot(t *testing.T) {
 		proc, err := procfs.OpenProcRoot()
 		require.NoError(t, err, "OpenProcRoot")
 		assert.NotNil(t, proc, "procfs *Handle")
+		assert.NoError(t, proc.Close(), "close handle")
 	})
 
 	t.Run("OpenUnsafeProcRoot", func(t *testing.T) {
 		proc, err := procfs.OpenUnsafeProcRoot()
 		require.NoError(t, err, "OpenUnsafeProcRoot")
 		assert.NotNil(t, proc, "procfs *Handle")
+		defer proc.Close() //nolint:errcheck // test code
 
 		// Make sure the handle actually is !subset=pid.
 		f, err := proc.OpenRoot(".")
 		require.NoError(t, err, "open root .")
 		err = fd.Faccessat(f, "uptime", unix.F_OK, unix.AT_SYMLINK_NOFOLLOW)
 		assert.NoError(t, err, "/proc/uptime should exist") //nolint:testifylint // this is an isolated operation so we can continue despite an error
+
+		assert.NoError(t, proc.Close(), "close handle")
 	})
 }
 
@@ -63,6 +67,7 @@ func TestProcRoot(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			proc, err := test.procRootFn()
 			require.NoError(t, err)
+			defer proc.Close() //nolint:errcheck // test code
 
 			t.Run("OpenThreadSelf", func(t *testing.T) {
 				// Make sure our tid checks below are correct.

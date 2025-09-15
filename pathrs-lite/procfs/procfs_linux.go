@@ -35,6 +35,12 @@ type Handle struct {
 	inner *procfs.Handle
 }
 
+// Close close the resources associated with this Handle. Note that if this
+// Handle was created with [OpenProcRoot], on some kernels the underlying
+// procfs handle is cached and so this Close operation may be a no-op. However,
+// you should always call Close on Handles once you are done with them.
+func (proc *Handle) Close() error { return proc.inner.Close() }
+
 // OpenProcRoot tries to open a "safer" handle to "/proc" (i.e., one with the
 // "subset=pid" mount option applied, available from Linux 5.8). Unless you
 // plan to do many [Handle.OpenRoot] operations, users should prefer to use

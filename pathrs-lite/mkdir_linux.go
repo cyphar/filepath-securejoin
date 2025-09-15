@@ -72,6 +72,8 @@ func toUnixMode(mode os.FileMode) (uint32, error) {
 // a brand new lookup of unsafePath (such as with [SecureJoin] or openat2) after
 // doing [MkdirAll]. If you intend to open the directory after creating it, you
 // should use MkdirAllHandle.
+//
+// [SecureJoin]: https://pkg.go.dev/github.com/cyphar/filepath-securejoin#SecureJoin
 func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.File, Err error) {
 	unixMode, err := toUnixMode(mode)
 	if err != nil {
@@ -226,6 +228,8 @@ func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.F
 // If you plan to open the directory after you have created it or want to use
 // an open directory handle as the root, you should use [MkdirAllHandle] instead.
 // This function is a wrapper around [MkdirAllHandle].
+//
+// [SecureJoin]: https://pkg.go.dev/github.com/cyphar/filepath-securejoin#SecureJoin
 func MkdirAll(root, unsafePath string, mode os.FileMode) error {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {

@@ -40,7 +40,7 @@ func prepareAt(dir Fd, path string) (dirFd int, unsafeUnmaskedPath string) {
 	// NOTE: If path is "." or "", the returned path won't be filepath.Clean,
 	// but that's okay since this path is either used for errors (in which case
 	// a trailing "/" or "/." is important information) or will be
-	// filepath.Clean'd later (in the case of openatFile).
+	// filepath.Clean'd later (in the case of fd.Openat).
 	return dirFd, path
 }
 

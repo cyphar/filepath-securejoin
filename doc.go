@@ -21,9 +21,8 @@
 // protections that are not provided by the legacy API. There are many more
 // operations that most programs expect to be able to do safely, but we do not
 // provide explicit support for them because we want to encourage users to
-// switch to [libpathrs](https://github.com/openSUSE/libpathrs) which is a
-// cross-language next-generation library that is entirely designed around
-// operating on paths safely.
+// switch to [libpathrs] which is a cross-language next-generation library that
+// is entirely designed around operating on paths safely.
 //
 // securejoin has been used by several container runtimes (Docker, runc,
 // Kubernetes, etc) for quite a few years as a de-facto standard for operating
@@ -33,9 +32,14 @@
 // API as soon as possible (or even better, switch to libpathrs).
 //
 // This project was initially intended to be included in the Go standard
-// library, but [it was rejected](https://go.dev/issue/20126). There is now a
-// [new Go proposal](https://go.dev/issue/67002) for a safe path resolution API
-// that shares some of the goals of filepath-securejoin. However, that design
-// is intended to work like `openat2(RESOLVE_BENEATH)` which does not fit the
-// usecase of container runtimes and most system tools.
+// library, but it was rejected (see https://go.dev/issue/20126). Much later,
+// [os.Root] was added to the Go stdlib that shares some of the goals of
+// filepath-securejoin. However, its design is intended to work like
+// openat2(RESOLVE_BENEATH) which does not fit the usecase of container
+// runtimes and most system tools.
+//
+// [libpathrs]: https://github.com/openSUSE/libpathrs
+// [OpenInRoot]: https://pkg.go.dev/github.com/cyphar/filepath-securejoin/pathrs-lite#OpenInRoot
+// [MkdirAll]: https://pkg.go.dev/github.com/cyphar/filepath-securejoin/pathrs-lite#MkdirAll
+// [os.Root]; https:///pkg.go.dev/os#Root
 package securejoin

@@ -47,6 +47,8 @@ func OpenatInRoot(root *os.File, unsafePath string) (*os.File, error) {
 // disconnected TTY that could cause a DoS, or some other issue). In order to
 // use the returned handle, you can "upgrade" it to a proper handle using
 // [Reopen].
+//
+// [SecureJoin]: https://pkg.go.dev/github.com/cyphar/filepath-securejoin#SecureJoin
 func OpenInRoot(root, unsafePath string) (*os.File, error) {
 	rootDir, err := os.OpenFile(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -101,7 +103,7 @@ func Reopen(handle *os.File, flags int) (*os.File, error) {
 	}
 
 	flags |= unix.O_CLOEXEC
-	// Rather than just wrapping openatFile, open-code it so we can copy
+	// Rather than just wrapping fd.Openat, open-code it so we can copy
 	// handle.Name().
 	reopenFd, err := unix.Openat(int(procFdDir.Fd()), fdStr, flags, 0)
 	if err != nil {

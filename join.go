@@ -51,12 +51,13 @@ func hasDotDot(path string) bool {
 	return strings.Contains("/"+path+"/", "/../")
 }
 
-// SecureJoinVFS joins the two given path components (similar to [filepath.Join]) except
-// that the returned path is guaranteed to be scoped inside the provided root
-// path (when evaluated). Any symbolic links in the path are evaluated with the
-// given root treated as the root of the filesystem, similar to a chroot. The
-// filesystem state is evaluated through the given [VFS] interface (if nil, the
-// standard [os].* family of functions are used).
+// SecureJoinVFS joins the two given path components (similar to
+// [filepath.Join]) except that the returned path is guaranteed to be scoped
+// inside the provided root path (when evaluated). Any symbolic links in the
+// path are evaluated with the given root treated as the root of the
+// filesystem, similar to a chroot. The filesystem state is evaluated through
+// the given [VFS] interface (if nil, the standard [os].* family of functions
+// are used).
 //
 // Note that the guarantees provided by this function only apply if the path
 // components in the returned string are not modified (in other words are not

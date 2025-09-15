@@ -213,18 +213,7 @@ var getCachedProcRoot = gocompat.SyncOnceValue(func() *Handle {
 	return procRoot
 })
 
-// OpenProcRoot tries to open a "safer" handle to "/proc" (i.e., one with the
-// "subset=pid" mount option applied, available from Linux 5.8). Unless you
-// plan to do many operations with [ProcRoot], users should prefer to use this
-// over [OpenUnsafeProcRoot] which is far more dangerous to keep open.
-//
-// If a safe handle cannot be opened, OpenProcRoot will fall back to opening a
-// regular "/proc" handle.
-//
-// Note that using [ProcRoot] will still work with handles returned by this
-// function. If a [ProcRoot] subpath cannot be operated on with a safe "/proc"
-// handle, then [OpenUnsafeProcRoot] will be called internally and a temporary
-// unsafe handle will be used.
+// OpenProcRoot tries to open a "safer" handle to "/proc".
 func OpenProcRoot() (*Handle, error) {
 	if proc := getCachedProcRoot(); proc != nil {
 		return proc, nil
@@ -233,16 +222,7 @@ func OpenProcRoot() (*Handle, error) {
 }
 
 // OpenUnsafeProcRoot opens a handle to "/proc" without any overmounts or
-// masked paths. You must be extremely careful to make sure this handle is
-// never leaked to a container and that you program cannot be tricked into
-// writing to arbitrary paths within it.
-//
-// This is not necessary if you just wish to use [ProcRoot], as handles
-// returned by [OpenProcRoot] will fall back to using a *temporary* unsafe
-// handle in that case. You should only really use this if you need to do many
-// operations on [ProcRoot] and the performance overhead of making many procfs
-// handles is an issue, and you should make sure to close the handle as soon as
-// possible to avoid known-fd-number attacks.
+// masked paths (but also without "subset=pid").
 func OpenUnsafeProcRoot() (*Handle, error) { return getProcRoot(false) }
 
 func getProcRoot(subset bool) (*Handle, error) {
@@ -328,7 +308,7 @@ func (base procfsBase) prefix(proc *Handle) (string, error) {
 // [os.File]: https://pkg.go.dev/os#File
 type ProcThreadSelfCloser func()
 
-// Open is the core lookup operation for [Handle]. It returns a handle to
+// open is the core lookup operation for [Handle]. It returns a handle to
 // "/proc/<base>/<subpath>". If the returned [ProcThreadSelfCloser] is non-nil,
 // you should call it after you are done interacting with the returned handle.
 //
@@ -395,12 +375,6 @@ func (proc *Handle) OpenThreadSelf(subpath string) (_ *os.File, _ ProcThreadSelf
 }
 
 // OpenSelf returns a handle to /proc/self/<subpath>.
-//
-// Note that in Go programs with non-homogenous threads, this may result in
-// spurious errors. If you are monkeying around with APIs that are
-// thread-specific, you probably want to use [ProcThreadSelf] instead which
-// will guarantee that the handle refers to the same thread as the caller is
-// executing on.
 func (proc *Handle) OpenSelf(subpath string) (*os.File, error) {
 	file, closer, err := proc.open(ProcSelf, subpath)
 	assert.Assert(closer == nil, "closer for ProcSelf must be nil")
@@ -408,12 +382,6 @@ func (proc *Handle) OpenSelf(subpath string) (*os.File, error) {
 }
 
 // OpenRoot returns a handle to /proc/<subpath>.
-//
-// You should only use this when you need to operate on global procfs files
-// (such as sysctls in /proc/sys). Unlike [OpenThreadSelf], [OpenSelf], and
-// [ProcPid], the procfs handle used internally for this operation will never
-// use subset=pids, which makes it a more juicy target for CVE-2024-21626-style
-// attacks.
 func (proc *Handle) OpenRoot(subpath string) (*os.File, error) {
 	file, closer, err := proc.open(ProcRoot, subpath)
 	assert.Assert(closer == nil, "closer for ProcRoot must be nil")
@@ -422,16 +390,6 @@ func (proc *Handle) OpenRoot(subpath string) (*os.File, error) {
 
 // OpenPid returns a handle to /proc/$pid/<subpath> (pid can be a pid or tid).
 // This is mainly intended for usage when operating on other processes.
-//
-// You should not use this for the current thread, as special handling is
-// needed for /proc/thread-self (or /proc/self/task/<tid>) when dealing with
-// goroutine scheduling -- use [OpenThreadSelf] instead.
-//
-// To refer to the current thread-group, you should use prefer [OpenSelf] to
-// passing os.Getpid as the pid argument.
-//
-// If you want to operate on the top-level /proc filesystem, you should use
-// [OpenRoot] instead.
 func (proc *Handle) OpenPid(pid int, subpath string) (*os.File, error) {
 	return proc.OpenRoot(strconv.Itoa(pid) + "/" + subpath)
 }

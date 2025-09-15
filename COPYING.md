@@ -25,8 +25,8 @@ BSD-3-Clause license:
  * `join*.go`
  * `vfs.go`
  * `internal/consts/*.go`
- * `internal/gocompat/*.go`
- * `internal/kernelversion/*.go`
+ * `pathrs-lite/internal/gocompat/*.go`
+ * `pathrs-lite/internal/kernelversion/*.go`
 
 The text of the BSD-3-Clause license used by this project is the following (the
 text is also available from the [`LICENSE.BSD`](./LICENSE.BSD) file):

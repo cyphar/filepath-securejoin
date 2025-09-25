@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Breaking ###
+- The deprecated `MkdirAll`, `MkdirAllHandle`, `OpenInRoot`, `OpenatInRoot` and
+  `Reopen` wrappers have been removed. Please switch to using `pathrs-lite`
+  directly.
+
 ## [0.5.0] - 2025-09-26 ##
 
 > Let the past die. Kill it if you have to.

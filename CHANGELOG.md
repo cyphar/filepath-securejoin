@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Breaking ###
+- The deprecated `MkdirAll`, `MkdirAllHandle`, `OpenInRoot`, `OpenatInRoot` and
+  `Reopen` wrappers have been removed. Please switch to using `pathrs-lite`
+  directly.
+
+## [0.5.0] - 2025-09-26 ##
+
+> Let the past die. Kill it if you have to.
+
 > **NOTE**: With this release, some parts of
 > `github.com/cyphar/filepath-securejoin` are now licensed under the Mozilla
 > Public License (version 2). Please see [COPYING.md][] as well as the the
@@ -350,7 +359,8 @@ This is our first release of `github.com/cyphar/filepath-securejoin`,
 containing a full implementation with a coverage of 93.5% (the only missing
 cases are the error cases, which are hard to mocktest at the moment).
 
-[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/cyphar/filepath-securejoin/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cyphar/filepath-securejoin/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.6...v0.4.0
 [0.3.6]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.5...v0.3.6

@@ -38,12 +38,12 @@ done
 gocoverdir="$(mktemp --tmpdir -d gocoverdir.XXXXXXXX)"
 trap 'rm -rf $gocoverdir' EXIT
 
-test_args=()
+test_args=("-count=1" "-cover" "-coverpkg=./...")
 [ -n "$verbose" ] && test_args+=("-v")
 [ -z "$long" ] && test_args+=("-short")
 
-"$GO" test -count 1 -cover -test.gocoverdir="$gocoverdir" "${test_args[@]}" ./...
-sudo "$GO" test -count 1 -cover -test.gocoverdir="$gocoverdir" "${test_args[@]}" ./...
+"$GO" test "${test_args[@]}" ./... -args -test.gocoverdir="$gocoverdir"
+sudo "$GO" test "${test_args[@]}" ./... -args -test.gocoverdir="$gocoverdir"
 
 "$GO" tool covdata percent -i "$gocoverdir"
 [ -n "$silent" ] || "$GO" tool covdata func -i "$gocoverdir" | sort -k 3gr

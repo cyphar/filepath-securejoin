@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
      `runtime.LockOSThread` -- `ProcThreadSelfCloser` is currently equivalent
      to `runtime.UnlockOSThread`).
 
-     Note that you cannot open any `procfs` symlinks (most notably magiclinks)
+     Note that you cannot open any `procfs` symlinks (most notably magic-links)
      using this API. At the moment, filepath-securejoin does not support this
      feature (but [libpathrs][] does).
 
@@ -92,11 +92,11 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   is now being exported it seems unwise to advertise the API as "safe" if we do
   not protect against known attacks.
 
-  The procfs API will now be more protected against attackers on systems
-  lacking the aforementioned protections. However, the most comprehensive of
-  these protections effectively rely on [`statx(STATX_MNT_ID)`][statx.2] (Linux
-  5.8). On older kernel versions, there is no effective protection (there is
-  some minimal protection against non-`procfs` filesystem components but a
+  The procfs API is now more protected against attackers on systems lacking the
+  aforementioned protections. However, the most comprehensive of these
+  protections effectively rely on [`statx(STATX_MNT_ID)`][statx.2] (Linux 5.8).
+  On older kernel versions, there is no effective protection (there is some
+  minimal protection against non-`procfs` filesystem components but a
   sufficiently clever attacker can work around those). In addition,
   `STATX_MNT_ID` is vulnerable to mount ID reuse attacks by sufficiently
   motivated and privileged attackers -- this problem is mitigated with

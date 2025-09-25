@@ -78,7 +78,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 - Previously, the hardened procfs implementation (used internally within
   `Reopen` and `Open(at)InRoot`) only protected against overmount attacks on
   systems with `openat2(2)` (Linux 5.6) or systems with `fsopen(2)` or
-  `open_tree(2)` (Linux 4.18) and programs with privileges to use them (with
+  `open_tree(2)` (Linux 5.2) and programs with privileges to use them (with
   some caveats about locked mounts that probably affect very few users). For
   other users, an attacker with the ability to create malicious mounts (on most
   systems, a sysadmin) could trick you into operating on files you didn't

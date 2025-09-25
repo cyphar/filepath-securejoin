@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   but those are deprecated and will be removed in the next minor release of
   filepath-securejoin. Users should update their import paths.
 
+  This new subpackage has also been relicensed under the Mozilla Public License
+  (version 2), please see [COPYING.md][] for more details.
+
 ### Added ###
 - Most of the key bits the safe `procfs` API have now been exported and are
   available in `github.com/cyphar/filepath-securejoin/pathrs-lite/procfs`. At

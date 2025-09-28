@@ -26,6 +26,7 @@ import (
 
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/fd"
+	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/gopathrs"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/procfs"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/testutils"
 )
@@ -75,7 +76,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 
 	// Before trying to make the tree, figure out what components don't exist
 	// yet so we can check them later.
-	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath)
+	handle, remainingPath, err := gopathrs.PartialLookupInRoot(rootDir, unsafePath)
 	handleName := "<nil>"
 	if handle != nil {
 		handleName = handle.Name()
@@ -83,7 +84,7 @@ func checkMkdirAll(t *testing.T, mkdirAll mkdirAllFunc, root, unsafePath string,
 	}
 	defer func() {
 		if t.Failed() {
-			t.Logf("partialLookupInRoot(%s, %s) -> (<%s>, %s, %v)", root, unsafePath, handleName, remainingPath, err)
+			t.Logf("PartialLookupInRoot(%s, %s) -> (<%s>, %s, %v)", root, unsafePath, handleName, remainingPath, err)
 		}
 	}()
 
@@ -218,6 +219,16 @@ func TestMkdirAllHandle_Basic(t *testing.T) { //nolint:revive // underscores are
 	testMkdirAll_Basic(t, mkdirAll_MkdirAllHandle)
 }
 
+func TestMkdirAll_BadRoot(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
+	t.Run("MkdirAll", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "does/not/exist")
+
+		err := MkdirAll(root, "foo/bar", 0o755)
+		require.ErrorIs(t, err, os.ErrNotExist, "MkdirAll with bad root")
+	})
+	// TODO: Should we add checks for nil *os.File?
+}
+
 func testMkdirAll_AsRoot(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive // underscores are more readable for test helpers
 	testutils.RequireRoot(t) // chown
 
@@ -259,49 +270,6 @@ func TestMkdirAll_AsRoot(t *testing.T) { //nolint:revive // underscores are more
 
 func TestMkdirAllHandle_AsRoot(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
 	testMkdirAll_AsRoot(t, mkdirAll_MkdirAllHandle)
-}
-
-func testMkdirAll_InvalidMode(t *testing.T, mkdirAll mkdirAllFunc) { //nolint:revive // underscores are more readable for test helpers
-	for _, test := range []struct {
-		mode        os.FileMode
-		expectedErr error
-	}{
-		// unix.S_IS* bits are invalid.
-		{unix.S_ISUID | 0o777, errInvalidMode},
-		{unix.S_ISGID | 0o777, errInvalidMode},
-		{unix.S_ISVTX | 0o777, errInvalidMode},
-		{unix.S_ISUID | unix.S_ISGID | unix.S_ISVTX | 0o777, errInvalidMode},
-		// unix.S_IFMT bits are also invalid.
-		{unix.S_IFDIR | 0o777, errInvalidMode},
-		{unix.S_IFREG | 0o777, errInvalidMode},
-		{unix.S_IFIFO | 0o777, errInvalidMode},
-		// os.FileType bits are also invalid.
-		{os.ModeDir | 0o777, errInvalidMode},
-		{os.ModeNamedPipe | 0o777, errInvalidMode},
-		{os.ModeIrregular | 0o777, errInvalidMode},
-		// suid/sgid bits are silently ignored by mkdirat and so we return an
-		// error explicitly.
-		{os.ModeSetuid | 0o777, errInvalidMode},
-		{os.ModeSetgid | 0o777, errInvalidMode},
-		{os.ModeSetuid | os.ModeSetgid | os.ModeSticky | 0o777, errInvalidMode},
-		// Proper sticky bit should work.
-		{os.ModeSticky | 0o777, nil},
-		// Regular mode bits.
-		{0o777, nil},
-		{0o711, nil},
-	} {
-		root := t.TempDir()
-		err := mkdirAll(t, root, "a/b/c", test.mode)
-		assert.ErrorIsf(t, err, test.expectedErr, "mkdirall %+.3o (%s)", test.mode, test.mode)
-	}
-}
-
-func TestMkdirAll_InvalidMode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
-	testMkdirAll_InvalidMode(t, mkdirAll_MkdirAll)
-}
-
-func TestMkdirAllHandle_InvalidMode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
-	testMkdirAll_InvalidMode(t, mkdirAll_MkdirAllHandle)
 }
 
 type racingMkdirMeta struct {

@@ -55,6 +55,14 @@ func init() {
 	}
 }
 
+func tRunWrapper(t *testing.T) testutils.TRunFunc {
+	return func(name string, doFn testutils.TDoFunc) {
+		t.Run(name, func(t *testing.T) {
+			doFn(t)
+		})
+	}
+}
+
 func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
 	newHandle, err := Reopen(handle, flags)
 	if newHandle != nil {
@@ -381,6 +389,17 @@ func TestOpenInRootHandle(t *testing.T) {
 			return OpenatInRoot(rootDir, unsafePath)
 		})
 	})
+}
+
+func TestOpenInRoot_BadRoot(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
+	t.Run("OpenInRoot", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "does/not/exist")
+
+		handle, err := OpenInRoot(root, ".")
+		require.ErrorIs(t, err, os.ErrNotExist, "OpenInRoot with bad root")
+		assert.Nil(t, handle, "OpenInRoot with bad root should not return handle")
+	})
+	// TODO: Should we add checks for nil *os.File?
 }
 
 func TestOpenInRoot_BadInode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers

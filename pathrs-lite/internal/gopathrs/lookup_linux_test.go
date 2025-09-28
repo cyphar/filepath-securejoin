@@ -9,7 +9,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-package pathrs
+package gopathrs
 
 import (
 	"errors"
@@ -312,7 +312,7 @@ func tRunWrapper(t *testing.T) testutils.TRunFunc {
 func TestPartialLookupInRoot(t *testing.T) {
 	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
 		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
-		testPartialLookup(t, partialLookupInRoot)
+		testPartialLookup(t, PartialLookupInRoot)
 	})
 }
 
@@ -325,7 +325,7 @@ func TestPartialLookupInRoot_BadInode(t *testing.T) {
 
 	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
 		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
-		partialLookupFn := partialLookupInRoot
+		partialLookupFn := PartialLookupInRoot
 
 		tree := []string{
 			// Make sure we don't open "bad" inodes.
@@ -384,7 +384,7 @@ func newRacingLookupMeta(pauseCh chan struct{}) *racingLookupMeta {
 func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir fd.Fd, unsafePath string, skipErrs []error, allowedResults []lookupResult) {
 	// Similar to checkPartialLookup, but with extra logic for
 	// handling the lookup stopping partly through the lookup.
-	handle, remainingPath, err := partialLookupInRoot(rootDir, unsafePath)
+	handle, remainingPath, err := PartialLookupInRoot(rootDir, unsafePath)
 	var (
 		handleName string
 		realPath   string
@@ -427,7 +427,7 @@ func (m *racingLookupMeta) checkPartialLookup(t *testing.T, rootDir fd.Fd, unsaf
 	if realPath != handleName {
 		// It's possible for handle.Name() to be wrong because while it was
 		// correct when it was set, it might not match if the path was swapped
-		// afterwards (for both openat2 and partialLookupInRoot).
+		// afterwards (for both openat2 and PartialLookupInRoot).
 		m.badNameCount++
 	}
 
@@ -571,7 +571,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 				// because there was a moment when this directory was inside
 				// the root, and the attacker moved it outside the root.
 				//
-				// Neither openat2 nor partialLookupInRoot will allow us to
+				// Neither openat2 nor PartialLookupInRoot will allow us to
 				// walk into ".." in this case (escaping the root), and we
 				// would catch that if it did happen.
 				lookupResult{handlePath: "../outsideroot", remainingPath: "c/d/e", fileType: unix.S_IFDIR},

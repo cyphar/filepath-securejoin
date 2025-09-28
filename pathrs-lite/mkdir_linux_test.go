@@ -9,7 +9,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-package pathrs
+package pathrs_test
 
 import (
 	"errors"
@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	pathrs "github.com/cyphar/filepath-securejoin/pathrs-lite"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/fd"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/gopathrs"
@@ -35,7 +36,7 @@ type mkdirAllFunc func(t *testing.T, root, unsafePath string, mode os.FileMode) 
 
 var mkdirAll_MkdirAll mkdirAllFunc = func(_ *testing.T, root, unsafePath string, mode os.FileMode) error { //nolint:revive // underscores are more readable for test helpers
 	// We can't check expectedPath here.
-	return MkdirAll(root, unsafePath, mode)
+	return pathrs.MkdirAll(root, unsafePath, mode)
 }
 
 var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath string, mode os.FileMode) error { //nolint:revive // underscores are more readable for test helpers
@@ -45,7 +46,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 		return err
 	}
 	defer rootDir.Close() //nolint:errcheck // test code
-	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)
+	handle, err := pathrs.MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {
 		return err
 	}
@@ -54,7 +55,7 @@ var mkdirAll_MkdirAllHandle mkdirAllFunc = func(t *testing.T, root, unsafePath s
 	// We can lookup the expected path again to get the full path. This will
 	// give a reasonable result because we aren't being attacked in this
 	// particular test.
-	handle2, err := OpenatInRoot(rootDir, unsafePath)
+	handle2, err := pathrs.OpenatInRoot(rootDir, unsafePath)
 	require.NoError(t, err)
 	expectedPath, err := procfs.ProcSelfFdReadlink(handle2)
 	require.NoError(t, err)
@@ -223,7 +224,7 @@ func TestMkdirAll_BadRoot(t *testing.T) { //nolint:revive // underscores are mor
 	t.Run("MkdirAll", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "does/not/exist")
 
-		err := MkdirAll(root, "foo/bar", 0o755)
+		err := pathrs.MkdirAll(root, "foo/bar", 0o755)
 		require.ErrorIs(t, err, os.ErrNotExist, "MkdirAll with bad root")
 	})
 	// TODO: Should we add checks for nil *os.File?
@@ -291,7 +292,7 @@ func (m *racingMkdirMeta) checkMkdirAllHandle_Racing(t *testing.T, root, unsafeP
 	}
 	defer rootDir.Close() //nolint:errcheck // test code
 
-	handle, err := MkdirAllHandle(rootDir, unsafePath, mode)
+	handle, err := pathrs.MkdirAllHandle(rootDir, unsafePath, mode)
 	if err != nil {
 		for _, allowedErr := range allowedErrs {
 			if errors.Is(err, allowedErr) {

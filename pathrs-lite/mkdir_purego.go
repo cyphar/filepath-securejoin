@@ -37,6 +37,6 @@ import (
 // should use MkdirAllHandle.
 //
 // [SecureJoin]: https://pkg.go.dev/github.com/cyphar/filepath-securejoin#SecureJoin
-func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (_ *os.File, Err error) {
+func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (*os.File, error) {
 	return gopathrs.MkdirAllHandle(root, unsafePath, mode)
 }

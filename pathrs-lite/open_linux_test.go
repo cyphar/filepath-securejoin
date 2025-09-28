@@ -9,7 +9,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-package pathrs
+package pathrs_test
 
 import (
 	"os"
@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	pathrs "github.com/cyphar/filepath-securejoin/pathrs-lite"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/fd"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/procfs"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/testutils"
@@ -55,8 +56,16 @@ func init() {
 	}
 }
 
+func tRunWrapper(t *testing.T) testutils.TRunFunc {
+	return func(name string, doFn testutils.TDoFunc) {
+		t.Run(name, func(t *testing.T) {
+			doFn(t)
+		})
+	}
+}
+
 func checkReopen(t *testing.T, handle *os.File, flags int, expectedErr error) {
-	newHandle, err := Reopen(handle, flags)
+	newHandle, err := pathrs.Reopen(handle, flags)
 	if newHandle != nil {
 		defer newHandle.Close() //nolint:errcheck // test code
 	}
@@ -364,7 +373,7 @@ func testOpenInRoot(t *testing.T, openInRootFn openInRootFunc) {
 func TestOpenInRoot(t *testing.T) {
 	testutils.WithWithoutOpenat2(true, tRunWrapper(t), func(ti testutils.TestingT) {
 		t := ti.(*testing.T) //nolint:forcetypeassert // guaranteed to be true and in test code
-		testOpenInRoot(t, OpenInRoot)
+		testOpenInRoot(t, pathrs.OpenInRoot)
 	})
 }
 
@@ -378,9 +387,20 @@ func TestOpenInRootHandle(t *testing.T) {
 			}
 			defer rootDir.Close() //nolint:errcheck // test code
 
-			return OpenatInRoot(rootDir, unsafePath)
+			return pathrs.OpenatInRoot(rootDir, unsafePath)
 		})
 	})
+}
+
+func TestOpenInRoot_BadRoot(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
+	t.Run("OpenInRoot", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "does/not/exist")
+
+		handle, err := pathrs.OpenInRoot(root, ".")
+		require.ErrorIs(t, err, os.ErrNotExist, "OpenInRoot with bad root")
+		assert.Nil(t, handle, "OpenInRoot with bad root should not return handle")
+	})
+	// TODO: Should we add checks for nil *os.File?
 }
 
 func TestOpenInRoot_BadInode(t *testing.T) { //nolint:revive // underscores are more readable for test helpers
@@ -422,7 +442,7 @@ func TestOpenInRoot_BadInode(t *testing.T) { //nolint:revive // underscores are 
 				test.expected.handlePath = filepath.Join(root, test.expected.handlePath)
 			}
 			t.Run(name, func(t *testing.T) {
-				checkOpenInRoot(t, OpenInRoot, root, test.unsafePath, test.expected)
+				checkOpenInRoot(t, pathrs.OpenInRoot, root, test.unsafePath, test.expected)
 			})
 		}
 	})

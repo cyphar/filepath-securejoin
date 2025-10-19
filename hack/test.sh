@@ -18,7 +18,8 @@ GO="${GO:-go}"
 silent=
 verbose=
 long=
-while getopts "svL" opt; do
+libpathrs=
+while getopts "svLl" opt; do
 	case "$opt" in
 		s)
 			silent=1
@@ -28,6 +29,9 @@ while getopts "svL" opt; do
 			;;
 		L)
 			long=1
+			;;
+		l)
+			libpathrs=1
 			;;
 		*)
 			echo "$0 [-s(ilent)]"
@@ -41,6 +45,7 @@ trap 'rm -rf $gocoverdir' EXIT
 test_args=("-count=1" "-cover" "-coverpkg=./...")
 [ -n "$verbose" ] && test_args+=("-v")
 [ -z "$long" ] && test_args+=("-short")
+[ -n "$libpathrs" ] && test_args+=("-tags" "libpathrs")
 
 "$GO" test "${test_args[@]}" ./... -args -test.gocoverdir="$gocoverdir"
 sudo "$GO" test "${test_args[@]}" ./... -args -test.gocoverdir="$gocoverdir"

@@ -24,6 +24,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+
+      # We need libpathrs so that golangci-lint can typecheck
+      # "cyphar.com/go-pathrs" (the package needs to be buildable).
+      - uses: dtolnay/rust-toolchain@stable
+      - name: find latest libpathrs release
+        uses: actions/github-script@v8
+        id: libpathrs-release-tarball
+        with:
+          result-encoding: string
+          script: |-
+            const latest_release = await github.rest.repos.getLatestRelease({
+              owner: "cyphar",
+              repo: "libpathrs",
+            });
+            console.log(latest_release);
+            return latest_release.data.tarball_url;
+      - name: install libpathrs
+        run: |-
+          mkdir -p /tmp/libpathrs
+          cd /tmp/libpathrs
+
+          wget -O latest.tar.gz "${{ steps.libpathrs-release-tarball.outputs.result }}"
+          tar xvf latest.tar.gz
+
+          cd *libpathrs-*/
+          make release
+          sudo ./install.sh --libdir=/usr/lib
+
       - uses: actions/setup-go@v6
         with:
           go-version: '^1'

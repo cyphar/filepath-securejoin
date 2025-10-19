@@ -3,8 +3,9 @@ module github.com/cyphar/filepath-securejoin
 go 1.18
 
 require (
+	cyphar.com/go-pathrs v0.2.1-0.20251018101956-15cb2100ac4a
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.18.0
+	golang.org/x/sys v0.26.0
 )
 
 require (

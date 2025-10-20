@@ -24,7 +24,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
-	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/fd"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/gocompat"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/procfs"
@@ -580,7 +579,7 @@ func TestPartialLookup_RacingRename(t *testing.T) {
 			)},
 		} {
 			test := test // copy iterator
-			test.skipErrs = append(test.skipErrs, internal.ErrPossibleAttack, internal.ErrPossibleBreakout)
+			test.skipErrs = append(test.skipErrs, unix.EAGAIN, unix.EXDEV)
 			t.Run(name, func(t *testing.T) {
 				root := testutils.CreateTree(t, tree...)
 

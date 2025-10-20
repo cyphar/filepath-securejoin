@@ -304,6 +304,7 @@ jobs:
     needs:
       - test-windows
       - test-unix
+      - test-libpathrs
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

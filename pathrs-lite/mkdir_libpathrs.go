@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//go:build linux && !libpathrs
+//go:build libpathrs
 
 // Copyright (C) 2024-2025 Aleksa Sarai <cyphar@cyphar.com>
 // Copyright (C) 2024-2025 SUSE LLC
@@ -14,7 +14,7 @@ package pathrs
 import (
 	"os"
 
-	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/gopathrs"
+	"cyphar.com/go-pathrs"
 )
 
 // MkdirAllHandle is equivalent to [MkdirAll], except that it is safer to use
@@ -38,5 +38,15 @@ import (
 //
 // [SecureJoin]: https://pkg.go.dev/github.com/cyphar/filepath-securejoin#SecureJoin
 func MkdirAllHandle(root *os.File, unsafePath string, mode os.FileMode) (*os.File, error) {
-	return gopathrs.MkdirAllHandle(root, unsafePath, mode)
+	rootRef, err := pathrs.RootFromFile(root)
+	if err != nil {
+		return nil, err
+	}
+	defer rootRef.Close() //nolint:errcheck // close failures aren't critical here
+
+	handle, err := rootRef.MkdirAll(unsafePath, mode)
+	if err != nil {
+		return nil, err
+	}
+	return handle.IntoFile(), nil
 }

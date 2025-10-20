@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-//go:build linux && !libpathrs
+//go:build libpathrs
 
 // Copyright (C) 2024-2025 Aleksa Sarai <cyphar@cyphar.com>
 // Copyright (C) 2024-2025 SUSE LLC
@@ -14,14 +14,23 @@ package pathrs
 import (
 	"os"
 
-	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/gopathrs"
-	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/procfs"
+	"cyphar.com/go-pathrs"
 )
 
 // OpenatInRoot is equivalent to [OpenInRoot], except that the root is provided
 // using an *[os.File] handle, to ensure that the correct root directory is used.
 func OpenatInRoot(root *os.File, unsafePath string) (*os.File, error) {
-	return gopathrs.OpenatInRoot(root, unsafePath)
+	rootRef, err := pathrs.RootFromFile(root)
+	if err != nil {
+		return nil, err
+	}
+	defer rootRef.Close() //nolint:errcheck // close failures aren't critical here
+
+	handle, err := rootRef.Resolve(unsafePath)
+	if err != nil {
+		return nil, err
+	}
+	return handle.IntoFile(), nil
 }
 
 // Reopen takes an *[os.File] handle and re-opens it through /proc/self/fd.
@@ -37,6 +46,12 @@ func OpenatInRoot(root *os.File, unsafePath string) (*os.File, error) {
 // operations. See [CVE-2019-19921] for more details.
 //
 // [CVE-2019-19921]: https://github.com/advisories/GHSA-fh74-hm69-rqjw
-func Reopen(handle *os.File, flags int) (*os.File, error) {
-	return procfs.ReopenFd(handle, flags)
+func Reopen(file *os.File, flags int) (*os.File, error) {
+	handle, err := pathrs.HandleFromFile(file)
+	if err != nil {
+		return nil, err
+	}
+	defer handle.Close() //nolint:errcheck // close failures aren't critical here
+
+	return handle.OpenFile(flags)
 }

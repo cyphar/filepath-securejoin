@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   `Reopen` wrappers have been removed. Please switch to using `pathrs-lite`
   directly.
 
+### Added ###
+- `pathrs-lite` now has support for using libpathrs as a backend. This is
+  opt-in and can be enabled at build time with the `libpathrs` build tag. The
+  intention is to allow for downstream libraries and other projects to make use
+  of the pure-Go `github.com/cyphar/filepath-securejoin/pathrs-lite` package
+  and distributors can then opt-in to using `libpathrs` for the entire binary
+  if they wish.
+
 ## [0.5.0] - 2025-09-26 ##
 
 > Let the past die. Kill it if you have to.

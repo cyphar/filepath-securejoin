@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Changed ###
+- `openat2` can return `-EAGAIN` if it detects a possible attack in certain
+  scenarios (namely if there was a rename or mount while walking a path with a
+  `..` component). While this is necessary to avoid a denial-of-service in the
+  kernel, it does require retry loops in userspace.
+
+  In previous versions, `pathrs-lite` would retry `openat2` 32 times before
+  returning an error, but we've received user reports that this limit can be
+  hit on systems with very heavy load. In some synthetic benchmarks (testing
+  the worst-case of an attacker doing renames in a tight loop on every core of
+  a 16-core machine) we managed to get a ~3% failure rate in runc. We have
+  improved this situation in two ways:
+
+  * We have now increased this limit to 128, which should be good enough for
+    most use-cases without becoming a denial-of-service vector (the number of
+    syscalls called by the `O_PATH` resolver in a typical case is within the
+    same ballpark). The same benchmarks show a failure rate of ~0.12% which
+    (while not zero) is probably sufficient for most users.
+
+  * In addition, we now return a `unix.EAGAIN` error that is bubbled up and can
+    be detected by callers. This means that callers with stricter requirements
+    to avoid spurious errors can choose to do their own infinite `EAGAIN` retry
+    loop (though we would strongly recommend users use time-based deadlines in
+    such retry loops to avoid potentially unbounded denials-of-service).
+
 ## [0.5.0] - 2025-09-26 ##
 
 > Let the past die. Kill it if you have to.

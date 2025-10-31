@@ -4,7 +4,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased] ##
+## [Unreleased 0.5.z] ##
+
+## [0.5.1] - 2025-10-31 ##
+
+> Spooky scary skeletons send shivers down your spine!
 
 ### Changed ###
 - `openat2` can return `-EAGAIN` if it detects a possible attack in certain
@@ -379,7 +383,8 @@ This is our first release of `github.com/cyphar/filepath-securejoin`,
 containing a full implementation with a coverage of 93.5% (the only missing
 cases are the error cases, which are hard to mocktest at the moment).
 
-[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.5.0...HEAD
+[Unreleased 0.5.z]: https://github.com/cyphar/filepath-securejoin/compare/v0.5.1...release-0.5
+[0.5.1]: https://github.com/cyphar/filepath-securejoin/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/cyphar/filepath-securejoin/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cyphar/filepath-securejoin/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cyphar/filepath-securejoin/compare/v0.3.6...v0.4.0

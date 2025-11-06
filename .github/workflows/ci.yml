@@ -89,7 +89,7 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           check-latest: true
-      - name: set GOOARCH
+      - name: set GOARCH
         run: echo "GOARCH=${{ matrix.go-arch }}" >>"$GITHUB_ENV"
       - name: go build check
         run: go build ./...

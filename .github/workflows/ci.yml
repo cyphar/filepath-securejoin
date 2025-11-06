@@ -54,7 +54,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '^1'
+          go-version: stable
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
@@ -77,11 +77,13 @@ jobs:
           - "1.21"
           - "1.22"
           - "1.23"
-          - "^1"
+          # TODO: add 1.24 here once Go 1.26 is out.
+          - oldstable
+          - stable
         include:
           - os: ubuntu-latest
             go-arch: "386"
-            go-version: "^1"
+            go-version: stable
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

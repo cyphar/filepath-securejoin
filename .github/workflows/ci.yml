@@ -54,22 +54,16 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '^1'
+          go-version: stable
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v8
         with:
-          version: v2.5
+          version: v2.6
 
-  test-build:
+  build:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - windows-latest
-          - ubuntu-latest
-          - macos-latest
-        go-arch:
-          - amd64
         go-version:
           - "1.18"
           - "1.19"
@@ -77,11 +71,19 @@ jobs:
           - "1.21"
           - "1.22"
           - "1.23"
-          - "^1"
+          # TODO: add 1.24 here once Go 1.26 is out.
+          - oldstable
+          - stable
+        go-arch:
+          - amd64
+        os:
+          - windows-latest
+          - ubuntu-latest
+          - macos-latest
         include:
-          - os: ubuntu-latest
+          - go-version: stable
             go-arch: "386"
-            go-version: "^1"
+            os: ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -89,14 +91,14 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           check-latest: true
-      - name: set GOOARCH
+      - name: set GOARCH
         run: echo "GOARCH=${{ matrix.go-arch }}" >>"$GITHUB_ENV"
       - name: go build check
         run: go build ./...
       - name: go test build check
         run: go test -run none ./...
 
-  test-windows:
+  windows:
     strategy:
       fail-fast: false
       matrix:
@@ -154,19 +156,19 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: cyphar/filepath-securejoin
 
-  test-unix:
+  unix:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
         go-version:
           - "1.18"
           - "1.20"
           - "1.21"
           - "oldstable"
           - "stable"
+        os:
+          - ubuntu-latest
+          - macos-latest
         include:
           # Make sure we test with a slightly older kernel (sadly we can't use
           # really old images like Ubuntu 18.04). Ubuntu 22.04 uses Linux 6.8.
@@ -217,17 +219,17 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: cyphar/filepath-securejoin
 
-  test-libpathrs:
+  libpathrs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-22.04
-          - ubuntu-latest
         go-version:
           - "1.18"
           - "oldstable"
           - "stable"
+        os:
+          - ubuntu-22.04
+          - ubuntu-latest
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -302,9 +304,9 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     needs:
-      - test-windows
-      - test-unix
-      - test-libpathrs
+      - windows
+      - unix
+      - libpathrs
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -345,17 +347,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - run: pip install codespell==v2.3.0
+      - run: pip install codespell==v2.4.1
       - run: codespell
 
   complete:
     runs-on: ubuntu-latest
     needs:
       - lint
-      - test-build
-      - test-windows
-      - test-unix
-      - test-libpathrs
+      - build
+      - windows
+      - unix
+      - libpathrs
       - coverage
       - codespell
     steps:

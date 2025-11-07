@@ -172,10 +172,10 @@ jobs:
         include:
           # Make sure we test with a slightly older kernel (sadly we can't use
           # really old images like Ubuntu 18.04). Ubuntu 22.04 uses Linux 6.8.
-          - os: ubuntu-22.04
-            go-version: "oldstable"
-          - os: ubuntu-22.04
-            go-version: "stable"
+          - go-version: "oldstable"
+            os: ubuntu-22.04
+          - go-version: "stable"
+            os: ubuntu-22.04
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

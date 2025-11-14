@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+### Fixed ###
+- Our logic for deciding whether to use `openat2(2)` or fallback to an `O_PATH`
+  resolver would cache the result to avoid doing needless test runs of
+  `openat2(2)`. However, this causes issues when `pathrs-lite` is being used by
+  a program that applies new seccomp-bpf filters onto itself -- if the filter
+  denies `openat2(2)` then we would return that error rather than falling back
+  to the `O_PATH` resolver. To resolve this, we no longer do this caching and
+  just retry `openat2(2)` each time (this is a little more expensive but is not
+  a huge difference overall).
+
 ## [0.6.0] - 2025-11-03 ##
 
 > By the Power of Greyskull!

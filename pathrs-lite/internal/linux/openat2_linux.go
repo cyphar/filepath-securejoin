@@ -13,12 +13,12 @@ package linux
 
 import (
 	"golang.org/x/sys/unix"
-
-	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/gocompat"
 )
 
 // HasOpenat2 returns whether openat2(2) is supported on the running kernel.
-var HasOpenat2 = gocompat.SyncOnceValue(func() bool {
+// This value is *not* cached because it may change if the program applies a
+// new seccomp-bpf filter.
+var HasOpenat2 = func() bool {
 	fd, err := unix.Openat2(unix.AT_FDCWD, ".", &unix.OpenHow{
 		Flags:   unix.O_PATH | unix.O_CLOEXEC,
 		Resolve: unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_IN_ROOT,
@@ -28,4 +28,4 @@ var HasOpenat2 = gocompat.SyncOnceValue(func() bool {
 	}
 	_ = unix.Close(fd)
 	return true
-})
+}

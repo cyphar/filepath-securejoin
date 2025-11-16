@@ -15,6 +15,7 @@ on:
       - "v*"
     branches:
       - main
+      - "v*"
   pull_request:
   schedule:
     - cron: "30 10 * * 0"

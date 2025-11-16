@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
 
+	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/fd"
 	"github.com/cyphar/filepath-securejoin/pathrs-lite/internal/linux"
 )
 
@@ -79,9 +80,18 @@ func WithWithoutOpenat2(doAuto bool, tRunFn TRunFunc, doFn TDoFunc) {
 			if useOpenat2 && !linux.HasOpenat2() {
 				t.Skip("no openat2 support")
 			}
+
 			origHasOpenat2 := linux.HasOpenat2
 			linux.HasOpenat2 = func() bool { return useOpenat2 }
 			defer func() { linux.HasOpenat2 = origHasOpenat2 }()
+
+			if !useOpenat2 {
+				origOpenat2 := fd.Openat2
+				fd.Openat2 = func(_ fd.Fd, _ string, _ *unix.OpenHow) (*os.File, error) {
+					return nil, fmt.Errorf("INTERNAL ERROR THAT SHOULD NEVER BE SEEN: %w", unix.ENOSYS)
+				}
+				defer func() { fd.Openat2 = origOpenat2 }()
+			}
 
 			doFn(t)
 		})

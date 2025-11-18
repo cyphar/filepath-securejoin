@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
   denies `openat2(2)` then we would return that error rather than falling back
   to the `O_PATH` resolver. To resolve this issue, we no longer cache the
   result if `openat2(2)` was successful, only if there was an error.
+- A file descriptor leak in our `openat2` wrapper (when doing the necessary
+  `dup` for `RESOLVE_IN_ROOT`) has been removed.
 
 ## [0.5.1] - 2025-10-31 ##
 

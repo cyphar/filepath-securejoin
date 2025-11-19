@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased 0.5.z] ##
 
+## [0.5.2] - 2025-11-19 ##
+
+> "Will you walk into my parlour?" said a spider to a fly.
+
 ### Fixed ###
 - Our logic for deciding whether to use `openat2(2)` or fallback to an `O_PATH`
   resolver would cache the result to avoid doing needless test runs of

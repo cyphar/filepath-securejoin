@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased] ##
 
+## [0.6.1] - 2025-11-19 ##
+
+> At last up jumped the cunning spider, and fiercely held her fast.
+
 ### Fixed ###
 - Our logic for deciding whether to use `openat2(2)` or fallback to an `O_PATH`
   resolver would cache the result to avoid doing needless test runs of
@@ -426,7 +430,8 @@ This is our first release of `github.com/cyphar/filepath-securejoin`,
 containing a full implementation with a coverage of 93.5% (the only missing
 cases are the error cases, which are hard to mocktest at the moment).
 
-[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/cyphar/filepath-securejoin/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/cyphar/filepath-securejoin/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/cyphar/filepath-securejoin/compare/v0.5.0...v0.6.0
 [0.5.2]: https://github.com/cyphar/filepath-securejoin/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/cyphar/filepath-securejoin/compare/v0.5.0...v0.5.1

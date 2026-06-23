@@ -152,7 +152,7 @@ jobs:
         if: ${{ env.GOCOVERDIR != '' }}
         run: go tool covdata textfmt -i "$env:GOCOVERDIR" -o "codecov-coverage.txt"
       - name: upload coverage to codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: cyphar/filepath-securejoin
@@ -215,7 +215,7 @@ jobs:
         if: ${{ env.GOCOVERDIR != '' }}
         run: go tool covdata textfmt -i "$GOCOVERDIR" -o "codecov-coverage.txt"
       - name: upload coverage to codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: cyphar/filepath-securejoin
@@ -297,7 +297,7 @@ jobs:
         if: ${{ env.GOCOVERDIR != '' }}
         run: go tool covdata textfmt -i "$GOCOVERDIR" -o "codecov-coverage.txt"
       - name: upload coverage to codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: cyphar/filepath-securejoin

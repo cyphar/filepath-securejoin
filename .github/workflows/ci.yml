@@ -30,7 +30,7 @@ jobs:
       # "cyphar.com/go-pathrs" (the package needs to be buildable).
       - uses: dtolnay/rust-toolchain@stable
       - name: find latest libpathrs release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         id: libpathrs-release-tarball
         with:
           result-encoding: string
@@ -237,7 +237,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
       - name: find latest libpathrs release
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         id: libpathrs-release-tarball
         with:
           result-encoding: string

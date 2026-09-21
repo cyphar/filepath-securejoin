@@ -72,7 +72,8 @@ jobs:
           - "1.21"
           - "1.22"
           - "1.23"
-          # TODO: add 1.24 here once Go 1.26 is out.
+          - "1.24"
+          - "1.25"
           - oldstable
           - stable
         go-arch:
